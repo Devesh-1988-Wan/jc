@@ -56,3 +56,8 @@ export const updateReportWidgets = async (payload) => {
   const response = await apiClient.patch("/report/widgets", payload);
   return response.data;
 };
+
+export const refreshPreviewMetricsWithAI = async (previewId) => {
+  const response = await apiClient.post(`/report/previews/${previewId}/ai-metrics`);
+  return response.data;
+};

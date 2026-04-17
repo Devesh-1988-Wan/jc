@@ -10,7 +10,7 @@ import uuid
 
 from docx import Document
 from dotenv import load_dotenv
-from fastapi import APIRouter, FastAPI, File, HTTPException, UploadFile
+from fastapi import APIRouter, FastAPI, File, HTTPException, Request, UploadFile
 from motor.motor_asyncio import AsyncIOMotorClient
 from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field
@@ -225,6 +225,85 @@ async def generate_ai_context(report: JiraComplianceReport) -> AIContextPack:
         )
     except Exception:
         return build_fallback_ai_context(report.key_message, report.top_risks, report.recommendations)
+
+
+async def generate_ai_metric_pack(source_text: str, report: JiraComplianceReport) -> dict:
+    existing_metrics = [metric.model_dump() for metric in report.metrics]
+    try:
+        key = os.environ["EMERGENT_LLM_KEY"]
+        chat = LlmChat(
+            api_key=key,
+            session_id=f"jira-metrics-{uuid.uuid4()}",
+            system_message=(
+                "Return strict JSON only with keys: metrics, top_risks, recommendations. "
+                "metrics must be array of objects with metric_id, title, value, status, category, insight. "
+                "status must be GREEN/AMBER/RED and category one of SLA, Workflow Hygiene, Traceability, Quality, Planning."
+            ),
+        ).with_model("openai", "gpt-5.2")
+
+        prompt_payload = {
+            "instruction": "Extract and normalize compliance metrics for dashboard graphs from uploaded report text.",
+            "source_text": source_text[:12000],
+            "existing_metrics": existing_metrics,
+        }
+        response = await chat.send_message(UserMessage(text=json.dumps(prompt_payload)))
+        payload = response.strip()
+        if "{" in payload and "}" in payload:
+            payload = payload[payload.find("{") : payload.rfind("}") + 1]
+
+        parsed = json.loads(payload)
+        metrics_raw = parsed.get("metrics", [])
+        validated_metrics = []
+        allowed_categories = {"SLA", "Workflow Hygiene", "Traceability", "Quality", "Planning"}
+
+        for item in metrics_raw[:30]:
+            metric_id = str(item.get("metric_id", "")).upper().strip() or f"AUD-{len(validated_metrics) + 1:02d}"
+            title = str(item.get("title", "Not available")).strip() or "Not available"
+            value = int(float(item.get("value", 0)))
+            value = max(0, min(value, 100))
+            status = str(item.get("status", "")).upper().strip()
+            if status not in {"GREEN", "AMBER", "RED"}:
+                status = infer_status_from_value(value)
+            category = str(item.get("category", "")).strip()
+            if category not in allowed_categories:
+                category = infer_category(title)
+            insight = str(item.get("insight", f"Observed {value}% for {title.lower()}."))
+
+            validated_metrics.append(
+                ComplianceMetric(
+                    metric_id=metric_id,
+                    title=title,
+                    value=value,
+                    status=status,
+                    category=category,
+                    insight=insight,
+                ).model_dump()
+            )
+
+        if not validated_metrics:
+            validated_metrics = existing_metrics
+
+        top_risks = parsed.get("top_risks") or [
+            f"{metric['value']}% · {metric['title']}" for metric in validated_metrics if metric["status"] == "RED"
+        ]
+        if not top_risks:
+            top_risks = ["Not available"]
+
+        recommendations = parsed.get("recommendations") or build_recommendations(validated_metrics)
+        if not recommendations:
+            recommendations = ["Not available"]
+
+        return {
+            "metrics": validated_metrics,
+            "top_risks": [str(item) for item in top_risks[:8]],
+            "recommendations": [str(item) for item in recommendations[:8]],
+        }
+    except Exception:
+        return {
+            "metrics": existing_metrics,
+            "top_risks": report.top_risks,
+            "recommendations": report.recommendations,
+        }
 
 
 def build_seed_report() -> dict:
@@ -731,6 +810,29 @@ def extract_text_from_upload(uploaded_filename: str, file_bytes: bytes) -> str:
         raise HTTPException(status_code=400, detail=f"Unable to parse uploaded file: {exc}")
 
 
+def extract_multipart_file_without_header(raw_body: bytes) -> tuple[str, bytes] | tuple[None, None]:
+    if not raw_body:
+        return None, None
+
+    decoded = raw_body.decode("utf-8", errors="ignore")
+    filename_match = re.search(r'filename="([^"]+)"', decoded)
+    if not filename_match:
+        return None, None
+
+    filename = filename_match.group(1)
+    body_start = raw_body.find(b"\r\n\r\n")
+    if body_start == -1:
+        return None, None
+    body_start += 4
+
+    body_end = raw_body.rfind(b"\r\n--")
+    if body_end == -1 or body_end <= body_start:
+        body_end = len(raw_body)
+
+    file_bytes = raw_body[body_start:body_end]
+    return filename, file_bytes
+
+
 def build_summary(report: JiraComplianceReport) -> ReportSummary:
     green_controls = len([metric for metric in report.metrics if metric.status == "GREEN"])
     amber_controls = len([metric for metric in report.metrics if metric.status == "AMBER"])
@@ -858,28 +960,52 @@ async def update_action_status(action_id: str, payload: ActionStatusUpdate):
 
 
 @api_router.post("/report/upload-preview", response_model=UploadPreviewResponse)
-async def upload_report_preview(file: UploadFile = File(...)):
-    if not file.filename:
-        raise HTTPException(status_code=400, detail="Uploaded file name is missing")
+async def upload_report_preview(
+    request: Request,
+    file: UploadFile = File(default=None),
+    upload_file: UploadFile = File(default=None),
+):
+    active_file = file or upload_file
+    uploaded_filename = active_file.filename if active_file else None
+    file_bytes = await active_file.read() if active_file else b""
 
-    extension = Path(file.filename).suffix.lower()
+    if not uploaded_filename:
+        fallback_name, fallback_bytes = extract_multipart_file_without_header(await request.body())
+        uploaded_filename = fallback_name
+        file_bytes = fallback_bytes or b""
+
+    if not uploaded_filename:
+        raise HTTPException(status_code=400, detail="No file uploaded")
+
+    extension = Path(uploaded_filename).suffix.lower()
     if extension not in {".pdf", ".docx", ".txt", ".md", ".jpg", ".jpeg", ".png"}:
         raise HTTPException(status_code=400, detail="Supported formats: PDF, DOCX, TXT, MD, JPG, JPEG, PNG")
 
-    file_bytes = await file.read()
     if not file_bytes:
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
-    extracted_text = extract_text_from_upload(file.filename, file_bytes)
+    extracted_text = extract_text_from_upload(uploaded_filename, file_bytes)
     if not extracted_text.strip():
         raise HTTPException(status_code=400, detail="No readable text found in uploaded file")
 
     current_report = await get_or_seed_report()
     parsed_report, missing_fields, warnings = build_report_from_uploaded_text(
         extracted_text,
-        file.filename,
+        uploaded_filename,
         current_report,
     )
+
+    ai_metric_pack = await generate_ai_metric_pack(extracted_text, parsed_report)
+    parsed_report.metrics = [ComplianceMetric(**metric) for metric in ai_metric_pack["metrics"]]
+    parsed_report.top_risks = ai_metric_pack["top_risks"]
+    parsed_report.recommendations = ai_metric_pack["recommendations"]
+    parsed_report.executive_score = compute_executive_score(ai_metric_pack["metrics"])
+    parsed_report.risk_level = compute_risk_level(ai_metric_pack["metrics"])
+    parsed_report.kpi_definitions = [
+        KpiDefinition(**definition)
+        for definition in build_kpi_definitions_from_metrics(ai_metric_pack["metrics"])
+    ]
+    parsed_report.actions = [ActionItem(**action) for action in build_actions(parsed_report.recommendations)]
 
     ai_context = await generate_ai_context(parsed_report)
     parsed_report.ai_context = ai_context
@@ -887,17 +1013,18 @@ async def upload_report_preview(file: UploadFile = File(...)):
     preview_id = str(uuid.uuid4())
     preview_doc = {
         "preview_id": preview_id,
-        "uploaded_filename": file.filename,
+        "uploaded_filename": uploaded_filename,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "report": parsed_report.model_dump(),
         "missing_fields": missing_fields,
         "warnings": warnings,
+        "source_text": extracted_text,
     }
     await preview_collection.insert_one(preview_doc.copy())
 
     return UploadPreviewResponse(
         preview_id=preview_id,
-        uploaded_filename=file.filename,
+        uploaded_filename=uploaded_filename,
         report=parsed_report,
         missing_fields=missing_fields,
         warnings=warnings,
@@ -929,6 +1056,50 @@ async def apply_report_preview(preview_id: str):
     await trim_history_to_limit(limit=10)
 
     return updated_report
+
+
+@api_router.post("/report/previews/{preview_id}/ai-metrics", response_model=UploadPreviewResponse)
+async def refresh_preview_metrics_with_ai(preview_id: str):
+    preview_doc = await preview_collection.find_one({"preview_id": preview_id})
+    if not preview_doc:
+        raise HTTPException(status_code=404, detail="Preview not found")
+
+    source_text = preview_doc.get("source_text", "")
+    if not source_text:
+        raise HTTPException(status_code=400, detail="Source text unavailable for AI metric refresh")
+
+    current_preview_report = JiraComplianceReport(**{k: v for k, v in preview_doc["report"].items() if k != "_id"})
+    ai_metric_pack = await generate_ai_metric_pack(source_text, current_preview_report)
+
+    current_preview_report.metrics = [ComplianceMetric(**metric) for metric in ai_metric_pack["metrics"]]
+    current_preview_report.top_risks = ai_metric_pack["top_risks"]
+    current_preview_report.recommendations = ai_metric_pack["recommendations"]
+    current_preview_report.executive_score = compute_executive_score(ai_metric_pack["metrics"])
+    current_preview_report.risk_level = compute_risk_level(ai_metric_pack["metrics"])
+    current_preview_report.kpi_definitions = [
+        KpiDefinition(**definition)
+        for definition in build_kpi_definitions_from_metrics(ai_metric_pack["metrics"])
+    ]
+    current_preview_report.actions = [ActionItem(**action) for action in build_actions(current_preview_report.recommendations)]
+    current_preview_report.ai_context = await generate_ai_context(current_preview_report)
+
+    await preview_collection.update_one(
+        {"preview_id": preview_id},
+        {
+            "$set": {
+                "report": current_preview_report.model_dump(),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+        },
+    )
+
+    return UploadPreviewResponse(
+        preview_id=preview_id,
+        uploaded_filename=preview_doc["uploaded_filename"],
+        report=current_preview_report,
+        missing_fields=preview_doc.get("missing_fields", []),
+        warnings=preview_doc.get("warnings", []),
+    )
 
 
 @api_router.patch("/report/widgets", response_model=JiraComplianceReport)

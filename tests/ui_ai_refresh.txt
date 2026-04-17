@@ -1,0 +1,6 @@
+Executive Summary UI-AI-REFRESH
+last 30 days
+AUD-01: Bugs without bug owner - 11% (AMBER)
+AUD-04: Tasks/sub-tasks with missing parent links - 62% (RED)
+AUD-13: Priority 1 tickets not resolved - 44% (RED)
+AUD-15: Resolution within threshold for bugs - 68% (RED)

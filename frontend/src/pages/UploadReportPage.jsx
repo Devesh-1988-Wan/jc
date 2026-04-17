@@ -10,6 +10,7 @@ import {
   applyReportPreview,
   fetchReport,
   fetchUploadHistory,
+  refreshPreviewMetricsWithAI,
   rollbackFromHistory,
   uploadReportPreview,
 } from "../api/reportApi";
@@ -46,6 +47,7 @@ export default function UploadReportPage() {
   const [currentReport, setCurrentReport] = useState(null);
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [isApplying, setIsApplying] = useState(false);
+  const [isRefreshingAIMetrics, setIsRefreshingAIMetrics] = useState(false);
   const [rollbackInProgressId, setRollbackInProgressId] = useState("");
   const [rollbackOptions, setRollbackOptions] = useState({
     restore_summary: true,
@@ -174,6 +176,25 @@ export default function UploadReportPage() {
     }
   };
 
+  const handleRefreshMetricsWithAI = async () => {
+    if (!preview?.preview_id) {
+      toast.error("Generate preview first.");
+      return;
+    }
+
+    setIsRefreshingAIMetrics(true);
+    try {
+      const refreshedPreview = await refreshPreviewMetricsWithAI(preview.preview_id);
+      setPreview(refreshedPreview);
+      toast.success("Graphs and metrics refreshed using AI.");
+    } catch (error) {
+      const message = error?.response?.data?.detail || "AI metric refresh failed.";
+      toast.error(message);
+    } finally {
+      setIsRefreshingAIMetrics(false);
+    }
+  };
+
   const handleRollback = async (historyId) => {
     if (!Object.values(rollbackOptions).some(Boolean)) {
       toast.error("Select at least one section to restore.");
@@ -216,7 +237,7 @@ export default function UploadReportPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-[1fr_auto_auto] md:items-center" data-testid="upload-controls-grid">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-[1fr_auto_auto_auto] md:items-center" data-testid="upload-controls-grid">
             <input
               type="file"
               accept=".pdf,.docx,.txt,.md,.jpg,.jpeg,.png"
@@ -232,6 +253,15 @@ export default function UploadReportPage() {
             >
               <FileArrowUp size={16} />
               {isPreviewing ? "Parsing..." : "Generate Preview"}
+            </Button>
+
+            <Button
+              variant="outline"
+              onClick={handleRefreshMetricsWithAI}
+              disabled={!preview?.preview_id || isRefreshingAIMetrics}
+              data-testid="refresh-ai-metrics-button"
+            >
+              {isRefreshingAIMetrics ? "Refreshing..." : "Refresh Metrics with AI"}
             </Button>
 
             <Button
