@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 import io
+import json
 import logging
 import os
 from pathlib import Path
@@ -16,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field
 import pytesseract
 from pypdf import PdfReader
 from starlette.middleware.cors import CORSMiddleware
+from emergentintegrations.llm.chat import LlmChat, UserMessage
 
 
 ROOT_DIR = Path(__file__).parent
@@ -77,6 +79,15 @@ class LeadershipNarrative(BaseModel):
     recommendation: str
 
 
+class AIContextPack(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    executive_narrative: str
+    risk_story: str
+    action_rationale: str
+    leadership_talking_points: List[str]
+
+
 class JiraComplianceReport(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -94,6 +105,7 @@ class JiraComplianceReport(BaseModel):
     actions: List[ActionItem]
     kpi_definitions: List[KpiDefinition]
     narratives: List[LeadershipNarrative]
+    ai_context: AIContextPack
 
 
 class ReportSummary(BaseModel):
@@ -156,6 +168,63 @@ class WidgetUpdatePayload(BaseModel):
     actions: Optional[List[ActionItem]] = None
     kpi_definitions: Optional[List[KpiDefinition]] = None
     narratives: Optional[List[LeadershipNarrative]] = None
+
+
+def build_fallback_ai_context(key_message: str, top_risks: List[str], recommendations: List[str]) -> AIContextPack:
+    return AIContextPack(
+        executive_narrative=f"Leadership context: {key_message}",
+        risk_story="Primary operational risk exposure is concentrated in control gaps highlighted by red/amber findings.",
+        action_rationale="Recommended actions prioritize traceability, SLA recovery, and quality closure controls to reduce delivery risk.",
+        leadership_talking_points=[
+            top_risks[0] if top_risks else "Top risk not available",
+            recommendations[0] if recommendations else "Recommendation not available",
+            "Track corrective action completion weekly with executive visibility.",
+        ],
+    )
+
+
+async def generate_ai_context(report: JiraComplianceReport) -> AIContextPack:
+    try:
+        key = os.environ["EMERGENT_LLM_KEY"]
+        chat = LlmChat(
+            api_key=key,
+            session_id=f"jira-context-{uuid.uuid4()}",
+            system_message=(
+                "You are a compliance strategy assistant. Return strict JSON only with keys: "
+                "executive_narrative, risk_story, action_rationale, leadership_talking_points. "
+                "leadership_talking_points must be an array of 4 concise bullet strings."
+            ),
+        ).with_model("openai", "gpt-5.2")
+
+        prompt = {
+            "period": report.period,
+            "executive_score": report.executive_score,
+            "risk_level": report.risk_level,
+            "key_message": report.key_message,
+            "top_risks": report.top_risks,
+            "recommendations": report.recommendations,
+            "metrics": [metric.model_dump() for metric in report.metrics],
+        }
+
+        response = await chat.send_message(UserMessage(text=json.dumps(prompt)))
+        payload = response.strip()
+
+        if "{" in payload and "}" in payload:
+            payload = payload[payload.find("{") : payload.rfind("}") + 1]
+
+        ai_data = json.loads(payload)
+        talking_points = ai_data.get("leadership_talking_points", [])
+        if not isinstance(talking_points, list):
+            talking_points = [str(talking_points)]
+
+        return AIContextPack(
+            executive_narrative=str(ai_data.get("executive_narrative", "Not available")),
+            risk_story=str(ai_data.get("risk_story", "Not available")),
+            action_rationale=str(ai_data.get("action_rationale", "Not available")),
+            leadership_talking_points=[str(point) for point in talking_points[:6]] or ["Not available"],
+        )
+    except Exception:
+        return build_fallback_ai_context(report.key_message, report.top_risks, report.recommendations)
 
 
 def build_seed_report() -> dict:
@@ -394,6 +463,17 @@ def build_seed_report() -> dict:
                 "recommendation": "Run a focused SLA sprint on P1/P2 aging issues with daily leadership check-ins.",
             },
         ],
+        "ai_context": {
+            "executive_narrative": "Leadership context: Traceability and SLA adherence are the largest compliance risks in the last 30 days.",
+            "risk_story": "Risk concentration is highest in parent-link traceability and resolution threshold controls.",
+            "action_rationale": "Action plan focuses on workflow guardrails, RCA discipline, and faster P1/P2 closure velocity.",
+            "leadership_talking_points": [
+                "Traceability controls require immediate workflow gating.",
+                "SLA misses on bugs and defects remain above acceptable thresholds.",
+                "Root-cause completion is necessary for repeat-incident reduction.",
+                "Weekly executive action review should stay in place until red controls drop.",
+            ],
+        },
     }
 
 
@@ -626,6 +706,7 @@ def build_report_from_uploaded_text(
                 recommendation="Review preview outputs before applying to production dashboard.",
             )
         ],
+        ai_context=build_fallback_ai_context(key_message, top_risks, recommendations),
     )
 
     return report_payload, sorted(set(missing_fields)), warnings
@@ -669,6 +750,12 @@ def build_summary(report: JiraComplianceReport) -> ReportSummary:
 async def get_or_seed_report() -> JiraComplianceReport:
     doc = await report_collection.find_one({"report_id": REPORT_ID}, {"_id": 0})
     if doc:
+        if "ai_context" not in doc:
+            doc["ai_context"] = build_fallback_ai_context(
+                doc.get("key_message", "Not available"),
+                doc.get("top_risks", []),
+                doc.get("recommendations", []),
+            ).model_dump()
         return JiraComplianceReport(**doc)
 
     seed_doc = build_seed_report()
@@ -794,6 +881,9 @@ async def upload_report_preview(file: UploadFile = File(...)):
         current_report,
     )
 
+    ai_context = await generate_ai_context(parsed_report)
+    parsed_report.ai_context = ai_context
+
     preview_id = str(uuid.uuid4())
     preview_doc = {
         "preview_id": preview_id,
@@ -845,6 +935,8 @@ async def apply_report_preview(preview_id: str):
 async def update_report_widgets(payload: WidgetUpdatePayload):
     current_report = await get_or_seed_report()
     updated_payload = apply_widget_updates(current_report.model_dump(), payload)
+    refreshed_context = await generate_ai_context(JiraComplianceReport(**updated_payload))
+    updated_payload["ai_context"] = refreshed_context.model_dump()
     return await save_report_snapshot(updated_payload)
 
 
@@ -878,6 +970,9 @@ async def rollback_report_from_history(history_id: str, options: RollbackOptions
         current_payload["kpi_definitions"] = snapshot.get("kpi_definitions", current_payload["kpi_definitions"])
     if options.restore_narratives:
         current_payload["narratives"] = snapshot.get("narratives", current_payload["narratives"])
+
+    refreshed_context = await generate_ai_context(JiraComplianceReport(**current_payload))
+    current_payload["ai_context"] = refreshed_context.model_dump()
 
     rolled_back_report = await save_report_snapshot(current_payload)
     summary = build_summary(rolled_back_report)

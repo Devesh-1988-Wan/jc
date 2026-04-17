@@ -64,6 +64,13 @@ export default function ExecutiveSummaryPage() {
     );
   }
 
+  const aiContext = report.ai_context || {
+    executive_narrative: "Not available",
+    risk_story: "Not available",
+    action_rationale: "Not available",
+    leadership_talking_points: ["Not available"],
+  };
+
   return (
     <section className="space-y-8" data-testid="executive-summary-page">
       <div className="space-y-3" data-testid="summary-hero">
@@ -159,6 +166,36 @@ export default function ExecutiveSummaryPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card className="report-card rounded-sm border-[#E5E7EB] shadow-none" data-testid="ai-context-card">
+        <CardHeader>
+          <CardTitle className="text-lg font-semibold text-[#111827]" data-testid="ai-context-title">
+            AI-Generated Leadership Context
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-3" data-testid="ai-context-grid">
+          <div className="rounded-sm border border-[#E5E7EB] bg-white p-4" data-testid="ai-context-executive">
+            <p className="text-xs uppercase tracking-[0.14em] text-[#6B7280]">Executive Narrative</p>
+            <p className="mt-2 text-sm text-[#111827]">{aiContext.executive_narrative}</p>
+          </div>
+          <div className="rounded-sm border border-[#E5E7EB] bg-white p-4" data-testid="ai-context-risk-story">
+            <p className="text-xs uppercase tracking-[0.14em] text-[#6B7280]">Risk Story</p>
+            <p className="mt-2 text-sm text-[#111827]">{aiContext.risk_story}</p>
+          </div>
+          <div className="rounded-sm border border-[#E5E7EB] bg-white p-4" data-testid="ai-context-action-rationale">
+            <p className="text-xs uppercase tracking-[0.14em] text-[#6B7280]">Action Rationale</p>
+            <p className="mt-2 text-sm text-[#111827]">{aiContext.action_rationale}</p>
+          </div>
+          <div className="rounded-sm border border-[#E5E7EB] bg-white p-4 md:col-span-3" data-testid="ai-context-talking-points">
+            <p className="text-xs uppercase tracking-[0.14em] text-[#6B7280]">Leadership Talking Points</p>
+            <ul className="mt-2 space-y-2 text-sm text-[#111827]">
+              {aiContext.leadership_talking_points.map((point, index) => (
+                <li key={`${index}-${point}`} data-testid={`ai-context-talking-point-${index + 1}`}>• {point}</li>
+              ))}
+            </ul>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card className="report-card rounded-sm border-[#E5E7EB] bg-[#F9FAFB] shadow-none" data-testid="executive-actions-preview-card">
         <CardHeader>

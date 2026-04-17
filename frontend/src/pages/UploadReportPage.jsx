@@ -277,6 +277,32 @@ export default function UploadReportPage() {
             </CardContent>
           </Card>
 
+          <Card className="rounded-sm border-[#E5E7EB] shadow-none" data-testid="preview-ai-context-card">
+            <CardHeader>
+              <CardTitle className="text-lg font-semibold text-[#111827]" data-testid="preview-ai-context-title">
+                AI Context (Auto-Generated)
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-2" data-testid="preview-ai-context-grid">
+              <div className="rounded-sm border border-[#E5E7EB] bg-[#F9FAFB] p-3" data-testid="preview-ai-context-executive">
+                <p className="text-xs uppercase tracking-[0.12em] text-[#6B7280]">Executive Narrative</p>
+                <p className="mt-2 text-sm text-[#111827]">{preview.report.ai_context?.executive_narrative || "Not available"}</p>
+              </div>
+              <div className="rounded-sm border border-[#E5E7EB] bg-[#F9FAFB] p-3" data-testid="preview-ai-context-risk">
+                <p className="text-xs uppercase tracking-[0.12em] text-[#6B7280]">Risk Story</p>
+                <p className="mt-2 text-sm text-[#111827]">{preview.report.ai_context?.risk_story || "Not available"}</p>
+              </div>
+              <div className="rounded-sm border border-[#E5E7EB] bg-[#F9FAFB] p-3 md:col-span-2" data-testid="preview-ai-context-talking-points">
+                <p className="text-xs uppercase tracking-[0.12em] text-[#6B7280]">Talking Points</p>
+                <ul className="mt-2 space-y-1 text-sm text-[#111827]">
+                  {(preview.report.ai_context?.leadership_talking_points || ["Not available"]).map((point, index) => (
+                    <li key={`${index}-${point}`} data-testid={`preview-ai-point-${index + 1}`}>• {point}</li>
+                  ))}
+                </ul>
+              </div>
+            </CardContent>
+          </Card>
+
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2" data-testid="preview-notices-grid">
             <Card className="rounded-sm border-[#E5E7EB] shadow-none" data-testid="preview-missing-fields-card">
               <CardHeader>
