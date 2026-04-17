@@ -1,0 +1,108 @@
+{
+  "theme": "light",
+  "archetype": "Swiss & High-Contrast (Archetype 4)",
+  "vibe": "Authority, clarity, functional, objective.",
+  "typography": {
+    "heading_font": "Outfit",
+    "body_font": "Work Sans",
+    "scale": {
+      "h1": "text-4xl sm:text-5xl lg:text-6xl tracking-tight leading-none",
+      "h2": "text-2xl sm:text-3xl lg:text-4xl tracking-tight",
+      "h3": "text-xl sm:text-2xl",
+      "h4": "text-lg sm:text-xl",
+      "body": "text-base",
+      "small": "text-sm",
+      "labels_overlines": "text-xs uppercase tracking-[0.2em]"
+    },
+    "pairing_strategy": "The 'Swiss Brutalist' / Authority approach. High contrast weight differences. Outfit for Headings and Work Sans for body."
+  },
+  "colors": {
+    "background": {
+      "primary": "#FFFFFF",
+      "secondary": "#F3F4F6",
+      "tertiary": "#E5E7EB"
+    },
+    "text": {
+      "primary": "#111827",
+      "secondary": "#4B5563",
+      "muted": "#9CA3AF"
+    },
+    "brand": {
+      "primary": "#002FA7",
+      "primary_hover": "#002380"
+    },
+    "accents": {
+      "danger": "#DC2626",
+      "warning": "#F59E0B",
+      "success": "#10B981"
+    },
+    "borders": {
+      "default": "#E5E7EB",
+      "focus": "#002FA7"
+    }
+  },
+  "layout_and_spacing": {
+    "mode": "MODE B: THE 'CONTROL ROOM' GRID",
+    "grid_classes": "grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6",
+    "spacing_scale": "p-4, p-6, p-8, p-12",
+    "container_padding": "Containers with borders must have internal padding (p-6) to prevent text collision.",
+    "alignment": "Left-align paragraphs, metrics, and dense content for better readability."
+  },
+  "surfaces_and_components": {
+    "cards": {
+      "default": "Flat background (bg-white), 1px subtle border (border-gray-200), no shadow, rounded-sm (4px radius).",
+      "hover": "Hover: -translate-y-0.5, shadow-sm, border-gray-300 transition-all duration-200"
+    },
+    "slide_view": {
+      "background": "Use presentation_grid_bg with generous padding (p-12 to p-24) to simulate a slide canvas. Must be clearly boxed like a 16:9 slide presentation."
+    },
+    "buttons": {
+      "primary": "bg-[#002FA7] text-white hover:bg-[#002380] rounded-sm px-6 py-2 transition-colors",
+      "secondary": "bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-sm px-6 py-2 transition-colors"
+    },
+    "charts": {
+      "style": "Use Shadcn chart components or Recharts. Clear labels, no 3D effects. Use International Klein Blue, Emerald Green, Warning Yellow, and Signal Red."
+    },
+    "navigation": {
+      "header": "Sticky header (z-50) with backdrop-blur-md bg-white/80, 1px bottom border (border-gray-200). Must contain Logo + Nav Links + Primary CTA. Links visible on desktop."
+    }
+  },
+  "motion_and_interactions": {
+    "hover_states": "All interactive elements must have hover states. focus:ring-2 focus:ring-[#002FA7]/50",
+    "transitions": "transition-all duration-200 ease-in-out",
+    "entrance": "Staggered fade-in for lists and grid items."
+  },
+  "icons": {
+    "library": "Phosphor Icons (@phosphor-icons/react)",
+    "style": "Regular or Duotone for dense dashboards."
+  },
+  "testing": {
+    "attributes": "All interactive/key elements MUST have data-testid (e.g., data-testid='kpi-card', data-testid='slide-nav-next')"
+  },
+  "media": {
+    "logos": {
+      "placeholder": "https://images.unsplash.com/photo-1700004060627-324d5b5b3ff2?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzNTl8MHwxfHNlYXJjaHwxfHxhYnN0cmFjdCUyMHdoaXRlJTIwZ3JheSUyMGdlb21ldHJpYyUyMGJhY2tncm91bmR8ZW58MHx8fHwxNzc2NDE4Mzg0fDA&ixlib=rb-4.1.0&q=85",
+      "description": "Abstract logo / Company avatar"
+    },
+    "backgrounds": {
+      "presentation_grid_bg": "https://static.prod-images.emergentagent.com/jobs/8e9defc1-9768-42e9-ae13-ed17a32911ad/images/5088b3d0833bcbad39df135c015b499246b45759f153b3fa83ca3d8960a6bef9.png",
+      "executive_slide_cover": "https://static.prod-images.emergentagent.com/jobs/8e9defc1-9768-42e9-ae13-ed17a32911ad/images/0823fb487a76e61934f892778cba922adec84d19085b00fb486390dd44cef2cf.png",
+      "description": "Use for the 'Slide-style Leadership Brief view' background canvas."
+    },
+    "avatars": {
+      "exec_1": "https://images.unsplash.com/photo-1543132220-7bc04a0e790a?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2Njl8MHwxfHNlYXJjaHwxfHxidXNpbmVzcyUyMGV4ZWN1dGl2ZSUyMHBvcnRyYWl0fGVufDB8fHx8MTc3NjQxODM4NHww&ixlib=rb-4.1.0&q=85",
+      "exec_2": "https://images.unsplash.com/photo-1584940121258-c2553b66a739?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2Njl8MHwxfHNlYXJjaHwyfHxidXNpbmVzcyUyMGV4ZWN1dGl2ZSUyMHBvcnRyYWl0fGVufDB8fHx8MTc3NjQxODM4NHww&ixlib=rb-4.1.0&q=85",
+      "description": "Use for stakeholders, responsible owners of action plans, or leadership profiles."
+    }
+  },
+  "instructions_to_main_agent": [
+    "DO NOT use Inter, Roboto, or standard fonts for Headings. Use Outfit for Headings and Work Sans for body.",
+    "Implement the app as a multi-view dashboard: an Executive Summary view, a Slide-style Leadership view, a Detailed Compliance Findings view, and a KPI Definitions page.",
+    "Ensure 'Slide-style' view resembles an executive presentation deck (16:9 ratio containers, presentation_grid_bg background, minimal text, high visual impact).",
+    "Use Phosphor icons. Add 'yarn add @phosphor-icons/react' to dependencies.",
+    "For charts, use Shadcn Charts or Recharts. Ensure clear tooltips and data density.",
+    "Use Signal Red (#DC2626) exclusively for SLA breaches or high risks, Warning Yellow for pending issues, Emerald Green for success.",
+    "Cards should use the 'Technical' Grid Borders look: Flat white backgrounds, 1px subtle borders, tight gaps (gap-4 or gap-6), with sharp or max 4px border-radius.",
+    "All interactive elements must include 'data-testid' attributes."
+  ]
+}
