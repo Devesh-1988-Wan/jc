@@ -7,6 +7,7 @@ import ExecutiveSummaryPage from "./pages/ExecutiveSummaryPage";
 import SlideBriefPage from "./pages/SlideBriefPage";
 import DetailedFindingsPage from "./pages/DetailedFindingsPage";
 import KpiAppendixPage from "./pages/KpiAppendixPage";
+import UploadReportPage from "./pages/UploadReportPage";
 
 function App() {
   return (
@@ -19,6 +20,7 @@ function App() {
             <Route path="slides" element={<SlideBriefPage />} />
             <Route path="findings" element={<DetailedFindingsPage />} />
             <Route path="appendix" element={<KpiAppendixPage />} />
+            <Route path="upload" element={<UploadReportPage />} />
           </Route>
         </Routes>
         <Toaster data-testid="global-toaster" />

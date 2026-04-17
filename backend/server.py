@@ -1,13 +1,18 @@
 from datetime import datetime, timezone
+import io
 import logging
 import os
 from pathlib import Path
+import re
 from typing import List, Literal
+import uuid
 
+from docx import Document
 from dotenv import load_dotenv
-from fastapi import APIRouter, FastAPI, HTTPException
+from fastapi import APIRouter, FastAPI, File, HTTPException, UploadFile
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, ConfigDict, Field
+from pypdf import PdfReader
 from starlette.middleware.cors import CORSMiddleware
 
 
@@ -21,6 +26,8 @@ cors_origins = os.environ["CORS_ORIGINS"]
 client = AsyncIOMotorClient(mongo_url)
 db = client[db_name]
 report_collection = db.jira_compliance_reports
+preview_collection = db.jira_compliance_previews
+history_collection = db.jira_compliance_upload_history
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
@@ -101,6 +108,29 @@ class ReportSummary(BaseModel):
 
 class ActionStatusUpdate(BaseModel):
     status: Literal["Not Started", "In Progress", "Completed"]
+
+
+class UploadPreviewResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    preview_id: str
+    uploaded_filename: str
+    report: JiraComplianceReport
+    missing_fields: List[str]
+    warnings: List[str]
+
+
+class UploadHistoryItem(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    history_id: str
+    preview_id: str
+    uploaded_filename: str
+    uploaded_at: str
+    period: str
+    executive_score: int
+    risk_level: str
+    red_controls: int
 
 
 def build_seed_report() -> dict:
@@ -342,6 +372,231 @@ def build_seed_report() -> dict:
     }
 
 
+def infer_category(metric_title: str) -> Literal["SLA", "Workflow Hygiene", "Traceability", "Quality", "Planning"]:
+    title = metric_title.lower()
+    if "parent" in title or "trace" in title or "fix version" in title:
+        return "Traceability"
+    if "resolution" in title or "priority" in title or "long-open" in title or "completion date" in title:
+        return "SLA"
+    if "root cause" in title or "reopen" in title:
+        return "Quality"
+    if "estimate" in title:
+        return "Planning"
+    return "Workflow Hygiene"
+
+
+def parse_metrics_from_text(text: str) -> List[dict]:
+    pattern = re.compile(
+        r"(AUD-\d{2})\s*[:\-]?\s*(.*?)\s*[:\-]\s*(\d{1,3})%\s*\((GREEN|AMBER|RED)\)",
+        flags=re.IGNORECASE,
+    )
+
+    metrics = []
+    for match in pattern.finditer(text):
+        metric_id = match.group(1).upper()
+        title = re.sub(r"\s+", " ", match.group(2)).strip(" -*\t\n\r")
+        title = title if title else "Not available"
+        value = int(match.group(3))
+        value = max(0, min(value, 100))
+        status = match.group(4).upper()
+
+        metrics.append(
+            {
+                "metric_id": metric_id,
+                "title": title,
+                "value": value,
+                "status": status,
+                "category": infer_category(title),
+                "insight": "Not available" if title == "Not available" else f"Observed {value}% for {title.lower()}.",
+            }
+        )
+
+    # Keep only unique metric_ids in encounter order
+    deduped_metrics = []
+    seen = set()
+    for metric in metrics:
+        if metric["metric_id"] in seen:
+            continue
+        seen.add(metric["metric_id"])
+        deduped_metrics.append(metric)
+
+    return deduped_metrics
+
+
+def compute_executive_score(metrics: List[dict]) -> int:
+    if not metrics:
+        return 0
+    weights = {"GREEN": 100, "AMBER": 65, "RED": 35}
+    score = sum(weights.get(metric["status"], 50) for metric in metrics) / len(metrics)
+    return int(round(score))
+
+
+def compute_risk_level(metrics: List[dict]) -> Literal["Low", "Medium", "High"]:
+    red_count = len([metric for metric in metrics if metric["status"] == "RED"])
+    if red_count >= 5:
+        return "High"
+    if red_count >= 3:
+        return "Medium"
+    return "Low"
+
+
+def parse_key_message(text: str) -> str:
+    match = re.search(
+        r"Executive Summary\s*(.+?)(?:KPIs|KPI|Compliance Findings|SLA Data|Workflow Hygiene Issues)",
+        text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if not match:
+        return "Not available"
+
+    cleaned = re.sub(r"\s+", " ", match.group(1)).strip(" -*\n\t\r")
+    return cleaned[:260] if cleaned else "Not available"
+
+
+def parse_period(text: str) -> str:
+    match = re.search(
+        r"(last\s*30\s*days|current\s*quarter|last\s*quarter|last\s*\d+\s*days)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    return match.group(1).title() if match else "Not available"
+
+
+def build_recommendations(metrics: List[dict]) -> List[str]:
+    recommendations = []
+
+    if any("parent" in metric["title"].lower() for metric in metrics):
+        recommendations.append("Enforce parent-link validation before transitions to Done.")
+    if any("root cause" in metric["title"].lower() for metric in metrics):
+        recommendations.append("Require root-cause completion for critical and reopened tickets.")
+    if any(metric["category"] == "SLA" and metric["status"] == "RED" for metric in metrics):
+        recommendations.append("Stand up a weekly SLA control review for aged defects and unresolved P1 items.")
+    if any("work log" in metric["title"].lower() for metric in metrics):
+        recommendations.append("Gate closure on mandatory work-log completion and assignee accountability.")
+
+    if not recommendations:
+        recommendations = [
+            "Not available",
+            "Not available",
+            "Not available",
+        ]
+
+    return recommendations[:4]
+
+
+def build_actions(recommendations: List[str]) -> List[dict]:
+    owners = [
+        "Engineering Operations",
+        "Quality Engineering",
+        "Incident Management",
+        "PMO",
+    ]
+
+    actions = []
+    for index, recommendation in enumerate(recommendations):
+        actions.append(
+            {
+                "action_id": f"ACT-{index + 1:02d}",
+                "title": recommendation,
+                "owner": owners[index % len(owners)],
+                "priority": "P0" if index < 2 else "P1",
+                "due_in_days": 7 + (index * 3),
+                "status": "Not Started",
+                "expected_impact": "Not available" if recommendation == "Not available" else "Improved control compliance in next reporting cycle.",
+            }
+        )
+
+    return actions
+
+
+def build_report_from_uploaded_text(
+    text: str,
+    uploaded_filename: str,
+    current_report: JiraComplianceReport,
+) -> tuple[JiraComplianceReport, List[str], List[str]]:
+    missing_fields = []
+    warnings = []
+
+    parsed_metrics = parse_metrics_from_text(text)
+    if not parsed_metrics:
+        parsed_metrics = [metric.model_dump() for metric in current_report.metrics]
+        missing_fields.append("metrics")
+        warnings.append("No AUD metric lines were detected; reused current dashboard metrics.")
+
+    key_message = parse_key_message(text)
+    if key_message == "Not available":
+        missing_fields.append("executive_summary")
+        warnings.append("Executive summary text not found; value marked as 'Not available'.")
+
+    period = parse_period(text)
+    if period == "Not available":
+        missing_fields.append("period")
+        warnings.append("Reporting period not detected; value marked as 'Not available'.")
+
+    recommendations = build_recommendations(parsed_metrics)
+    if recommendations and recommendations[0] == "Not available":
+        missing_fields.append("recommended_actions")
+
+    top_risks = [
+        f"{metric['value']}% · {metric['title']}"
+        for metric in parsed_metrics
+        if metric["status"] == "RED"
+    ]
+    if not top_risks:
+        top_risks = ["Not available"]
+        missing_fields.append("top_risks")
+
+    kpi_definitions = [
+        {
+            "metric_id": metric["metric_id"],
+            "definition": metric["title"],
+            "target": "GREEN <= 5%, AMBER 6-15%, RED > 15%",
+            "current_status": metric["status"],
+        }
+        for metric in parsed_metrics
+    ]
+
+    report_payload = JiraComplianceReport(
+        report_id=REPORT_ID,
+        title="Jira Compliance Leadership Report",
+        period=period,
+        audience=current_report.audience,
+        generated_at=datetime.now(timezone.utc).isoformat(),
+        executive_score=compute_executive_score(parsed_metrics),
+        risk_level=compute_risk_level(parsed_metrics),
+        key_message=key_message,
+        metrics=[ComplianceMetric(**metric) for metric in parsed_metrics],
+        top_risks=top_risks[:6],
+        recommendations=recommendations,
+        actions=[ActionItem(**action) for action in build_actions(recommendations)],
+        kpi_definitions=[KpiDefinition(**definition) for definition in kpi_definitions],
+        narratives=[
+            LeadershipNarrative(
+                what_happened=f"Uploaded file processed: {uploaded_filename}",
+                why_it_matters="Dashboard data has been refreshed using extracted controls from the uploaded document.",
+                recommendation="Review preview outputs before applying to production dashboard.",
+            )
+        ],
+    )
+
+    return report_payload, sorted(set(missing_fields)), warnings
+
+
+def extract_text_from_upload(uploaded_filename: str, file_bytes: bytes) -> str:
+    extension = Path(uploaded_filename).suffix.lower()
+    try:
+        if extension == ".pdf":
+            reader = PdfReader(io.BytesIO(file_bytes))
+            return "\n".join((page.extract_text() or "") for page in reader.pages)
+        if extension == ".docx":
+            doc = Document(io.BytesIO(file_bytes))
+            return "\n".join(paragraph.text for paragraph in doc.paragraphs)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Unable to parse uploaded file: {exc}")
+
+    raise HTTPException(status_code=400, detail="Only PDF and DOCX uploads are supported")
+
+
 def build_summary(report: JiraComplianceReport) -> ReportSummary:
     green_controls = len([metric for metric in report.metrics if metric.status == "GREEN"])
     amber_controls = len([metric for metric in report.metrics if metric.status == "AMBER"])
@@ -366,6 +621,15 @@ async def get_or_seed_report() -> JiraComplianceReport:
     seed_doc = build_seed_report()
     await report_collection.insert_one(seed_doc.copy())
     return JiraComplianceReport(**seed_doc)
+
+
+async def trim_history_to_limit(limit: int = 10):
+    history_docs = await history_collection.find({}, {"_id": 1}).sort("uploaded_at", -1).to_list(500)
+    if len(history_docs) <= limit:
+        return
+
+    ids_to_delete = [doc["_id"] for doc in history_docs[limit:]]
+    await history_collection.delete_many({"_id": {"$in": ids_to_delete}})
 
 
 @api_router.get("/")
@@ -416,6 +680,86 @@ async def update_action_status(action_id: str, payload: ActionStatusUpdate):
             return action
 
     raise HTTPException(status_code=404, detail="Action item not found after update")
+
+
+@api_router.post("/report/upload-preview", response_model=UploadPreviewResponse)
+async def upload_report_preview(file: UploadFile = File(...)):
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Uploaded file name is missing")
+
+    extension = Path(file.filename).suffix.lower()
+    if extension not in {".pdf", ".docx"}:
+        raise HTTPException(status_code=400, detail="Only PDF and DOCX uploads are supported")
+
+    file_bytes = await file.read()
+    if not file_bytes:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+
+    extracted_text = extract_text_from_upload(file.filename, file_bytes)
+    if not extracted_text.strip():
+        raise HTTPException(status_code=400, detail="No readable text found in uploaded file")
+
+    current_report = await get_or_seed_report()
+    parsed_report, missing_fields, warnings = build_report_from_uploaded_text(
+        extracted_text,
+        file.filename,
+        current_report,
+    )
+
+    preview_id = str(uuid.uuid4())
+    preview_doc = {
+        "preview_id": preview_id,
+        "uploaded_filename": file.filename,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "report": parsed_report.model_dump(),
+        "missing_fields": missing_fields,
+        "warnings": warnings,
+    }
+    await preview_collection.insert_one(preview_doc.copy())
+
+    return UploadPreviewResponse(
+        preview_id=preview_id,
+        uploaded_filename=file.filename,
+        report=parsed_report,
+        missing_fields=missing_fields,
+        warnings=warnings,
+    )
+
+
+@api_router.post("/report/apply-preview/{preview_id}", response_model=JiraComplianceReport)
+async def apply_report_preview(preview_id: str):
+    preview_doc = await preview_collection.find_one({"preview_id": preview_id}, {"_id": 0})
+    if not preview_doc:
+        raise HTTPException(status_code=404, detail="Preview not found")
+
+    report_doc = preview_doc["report"]
+    report_doc["report_id"] = REPORT_ID
+    report_doc["generated_at"] = datetime.now(timezone.utc).isoformat()
+
+    await report_collection.replace_one({"report_id": REPORT_ID}, report_doc, upsert=True)
+    updated_report = JiraComplianceReport(**report_doc)
+    summary = build_summary(updated_report)
+
+    history_doc = {
+        "history_id": str(uuid.uuid4()),
+        "preview_id": preview_id,
+        "uploaded_filename": preview_doc["uploaded_filename"],
+        "uploaded_at": datetime.now(timezone.utc).isoformat(),
+        "period": updated_report.period,
+        "executive_score": updated_report.executive_score,
+        "risk_level": updated_report.risk_level,
+        "red_controls": summary.red_controls,
+    }
+    await history_collection.insert_one(history_doc.copy())
+    await trim_history_to_limit(limit=10)
+
+    return updated_report
+
+
+@api_router.get("/report/upload-history", response_model=List[UploadHistoryItem])
+async def get_upload_history():
+    history_items = await history_collection.find({}, {"_id": 0}).sort("uploaded_at", -1).to_list(10)
+    return [UploadHistoryItem(**history_item) for history_item in history_items]
 
 
 app.include_router(api_router)

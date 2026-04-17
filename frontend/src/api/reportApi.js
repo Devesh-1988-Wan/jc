@@ -26,3 +26,23 @@ export const patchActionStatus = async (actionId, status) => {
   const response = await apiClient.patch(`/report/actions/${actionId}`, { status });
   return response.data;
 };
+
+export const uploadReportPreview = async (file) => {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const response = await apiClient.post("/report/upload-preview", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return response.data;
+};
+
+export const applyReportPreview = async (previewId) => {
+  const response = await apiClient.post(`/report/apply-preview/${previewId}`);
+  return response.data;
+};
+
+export const fetchUploadHistory = async () => {
+  const response = await apiClient.get("/report/upload-history");
+  return response.data;
+};

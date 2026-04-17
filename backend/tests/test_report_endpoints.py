@@ -33,11 +33,11 @@ def test_get_report_seeded_payload(api_client: requests.Session, api_base_url: s
 
     data = response.json()
     assert data["report_id"] == "jira-leadership-30d"
-    assert data["period"] == "Last 30 days"
-    assert data["executive_score"] == 54
-    assert isinstance(data["metrics"], list) and len(data["metrics"]) >= 10
-    assert isinstance(data["recommendations"], list) and len(data["recommendations"]) >= 3
-    assert isinstance(data["actions"], list) and len(data["actions"]) >= 3
+    assert isinstance(data["period"], str) and len(data["period"]) > 0
+    assert isinstance(data["executive_score"], int) and 0 <= data["executive_score"] <= 100
+    assert isinstance(data["metrics"], list) and len(data["metrics"]) >= 1
+    assert isinstance(data["recommendations"], list) and len(data["recommendations"]) >= 1
+    assert isinstance(data["actions"], list) and len(data["actions"]) >= 1
     assert isinstance(data["kpi_definitions"], list) and len(data["kpi_definitions"]) == len(data["metrics"])
     assert isinstance(data["narratives"], list) and len(data["narratives"]) >= 1
 
