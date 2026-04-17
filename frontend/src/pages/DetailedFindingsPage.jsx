@@ -122,7 +122,7 @@ export default function DetailedFindingsPage() {
         </CardHeader>
         <CardContent className="space-y-4" data-testid="leadership-narratives-list">
           {report.narratives.map((narrative, index) => (
-            <div key={narrative.what_happened} className="rounded-sm border border-[#E5E7EB] bg-white p-4" data-testid={`leadership-narrative-item-${index + 1}`}>
+            <div key={`${index}-${narrative.what_happened}`} className="rounded-sm border border-[#E5E7EB] bg-white p-4" data-testid={`leadership-narrative-item-${index + 1}`}>
               <p className="font-semibold text-[#111827]" data-testid={`leadership-narrative-what-${index + 1}`}>
                 {narrative.what_happened}
               </p>

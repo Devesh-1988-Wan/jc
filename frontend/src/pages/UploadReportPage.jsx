@@ -168,8 +168,8 @@ export default function UploadReportPage() {
                   <p className="text-sm text-[#047857]" data-testid="preview-missing-fields-empty">No missing fields detected.</p>
                 ) : (
                   <ul className="space-y-2">
-                    {preview.missing_fields.map((field) => (
-                      <li key={field} className="text-sm text-[#92400E]" data-testid={`preview-missing-field-${field.replace(/_/g, "-")}`}>
+                    {preview.missing_fields.map((field, index) => (
+                      <li key={`${index}-${field}`} className="text-sm text-[#92400E]" data-testid={`preview-missing-field-${field.replace(/_/g, "-")}`}>
                         {field}
                       </li>
                     ))}
@@ -190,7 +190,7 @@ export default function UploadReportPage() {
                 ) : (
                   <ul className="space-y-2">
                     {preview.warnings.map((warning, index) => (
-                      <li key={warning} className="text-sm text-[#374151]" data-testid={`preview-warning-item-${index + 1}`}>
+                      <li key={`${index}-${warning}`} className="text-sm text-[#374151]" data-testid={`preview-warning-item-${index + 1}`}>
                         {warning}
                       </li>
                     ))}

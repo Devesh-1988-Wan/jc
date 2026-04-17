@@ -129,7 +129,7 @@ export default function SlideBriefPage() {
 
           <ul className="grid grid-cols-1 gap-3 md:grid-cols-2" data-testid={`slide-points-${activeSlide.id}`}>
             {activeSlide.points.map((point, index) => (
-              <li key={point} className="flex items-start gap-3 rounded-sm border border-[#E5E7EB] bg-white/85 px-4 py-3 text-[#111827]" data-testid={`slide-point-${activeSlide.id}-${index + 1}`}>
+              <li key={`${activeSlide.id}-${index}-${point}`} className="flex items-start gap-3 rounded-sm border border-[#E5E7EB] bg-white/85 px-4 py-3 text-[#111827]" data-testid={`slide-point-${activeSlide.id}-${index + 1}`}>
                 <WarningCircle size={16} className="mt-1 text-[#DC2626]" weight="fill" />
                 <span>{point}</span>
               </li>

@@ -150,7 +150,7 @@ export default function ExecutiveSummaryPage() {
             </div>
             <ul className="space-y-3" data-testid="top-risks-list">
               {report.top_risks.map((risk, index) => (
-                <li key={risk} className="flex items-start gap-3 text-[#111827]" data-testid={`top-risk-item-${index + 1}`}>
+                <li key={`${index}-${risk}`} className="flex items-start gap-3 text-[#111827]" data-testid={`top-risk-item-${index + 1}`}>
                   <WarningCircle size={20} className="mt-0.5 text-[#DC2626]" weight="fill" />
                   <span>{risk}</span>
                 </li>
@@ -169,7 +169,7 @@ export default function ExecutiveSummaryPage() {
         <CardContent>
           <ul className="space-y-2" data-testid="executive-actions-list">
             {report.recommendations.map((item, index) => (
-              <li key={item} className="flex items-start gap-3 text-[#111827]" data-testid={`executive-action-item-${index + 1}`}>
+              <li key={`${index}-${item}`} className="flex items-start gap-3 text-[#111827]" data-testid={`executive-action-item-${index + 1}`}>
                 <ArrowRight size={16} className="mt-1 text-[#002FA7]" />
                 <span>{item}</span>
               </li>
