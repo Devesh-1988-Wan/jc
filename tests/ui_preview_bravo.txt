@@ -1,0 +1,4 @@
+Executive Summary UI-BRAVO KPIs
+last 30 days
+AUD-01: Bugs without bug owner - 2% (GREEN)
+AUD-13: Priority 1 tickets not resolved - 12% (AMBER)

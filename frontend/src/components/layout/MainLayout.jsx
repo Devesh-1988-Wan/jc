@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from "react-router-dom";
-import { ChartBar, FileArrowUp, FileText, ListChecks, Slideshow } from "@phosphor-icons/react";
+import { ChartBar, FileArrowUp, FileText, ListChecks, Slideshow, Sliders } from "@phosphor-icons/react";
 
 const navItems = [
   { to: "/summary", label: "Executive Summary", icon: ChartBar, testId: "nav-link-summary" },
@@ -7,6 +7,7 @@ const navItems = [
   { to: "/findings", label: "Detailed Findings", icon: ListChecks, testId: "nav-link-findings" },
   { to: "/appendix", label: "KPI Appendix", icon: FileText, testId: "nav-link-appendix" },
   { to: "/upload", label: "Upload Report", icon: FileArrowUp, testId: "nav-link-upload" },
+  { to: "/editor", label: "Widget Editor", icon: Sliders, testId: "nav-link-editor" },
 ];
 
 export default function MainLayout() {

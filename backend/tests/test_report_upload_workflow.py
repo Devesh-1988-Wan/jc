@@ -129,11 +129,11 @@ def test_upload_preview_accepts_docx(api_client: requests.Session, api_base_url:
 # Module: unsupported extension and empty-file validation checks
 def test_upload_preview_rejects_unsupported_file_type(api_client: requests.Session, api_base_url: str) -> None:
     files = {
-        "file": ("bad.txt", b"AUD-01: sample", "text/plain"),
+        "file": ("bad.csv", b"AUD-01,sample", "text/csv"),
     }
     response = api_client.post(f"{api_base_url}/api/report/upload-preview", files=files, timeout=30)
     assert response.status_code == 400
-    assert response.json()["detail"] == "Only PDF and DOCX uploads are supported"
+    assert response.json()["detail"] == "Supported formats: PDF, DOCX, TXT, MD, JPG, JPEG, PNG"
 
 
 def test_upload_preview_rejects_empty_file(api_client: requests.Session, api_base_url: str) -> None:

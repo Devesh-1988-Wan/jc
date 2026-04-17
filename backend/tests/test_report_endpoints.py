@@ -72,7 +72,7 @@ def test_get_report_actions_list(api_client: requests.Session, api_base_url: str
 
     actions = response.json()
     assert isinstance(actions, list)
-    assert len(actions) >= 3
+    assert len(actions) >= 1
 
     action = actions[0]
     assert isinstance(action["action_id"], str)

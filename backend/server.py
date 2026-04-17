@@ -4,14 +4,16 @@ import logging
 import os
 from pathlib import Path
 import re
-from typing import List, Literal
+from typing import List, Literal, Optional
 import uuid
 
 from docx import Document
 from dotenv import load_dotenv
 from fastapi import APIRouter, FastAPI, File, HTTPException, UploadFile
 from motor.motor_asyncio import AsyncIOMotorClient
+from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field
+import pytesseract
 from pypdf import PdfReader
 from starlette.middleware.cors import CORSMiddleware
 
@@ -131,6 +133,29 @@ class UploadHistoryItem(BaseModel):
     executive_score: int
     risk_level: str
     red_controls: int
+
+
+class RollbackOptions(BaseModel):
+    restore_summary: bool = True
+    restore_metrics: bool = True
+    restore_risks: bool = True
+    restore_recommendations: bool = True
+    restore_actions: bool = True
+    restore_kpi_definitions: bool = True
+    restore_narratives: bool = True
+
+
+class WidgetUpdatePayload(BaseModel):
+    period: Optional[str] = None
+    executive_score: Optional[int] = Field(default=None, ge=0, le=100)
+    risk_level: Optional[Literal["Low", "Medium", "High"]] = None
+    key_message: Optional[str] = None
+    metrics: Optional[List[ComplianceMetric]] = None
+    top_risks: Optional[List[str]] = None
+    recommendations: Optional[List[str]] = None
+    actions: Optional[List[ActionItem]] = None
+    kpi_definitions: Optional[List[KpiDefinition]] = None
+    narratives: Optional[List[LeadershipNarrative]] = None
 
 
 def build_seed_report() -> dict:
@@ -385,31 +410,63 @@ def infer_category(metric_title: str) -> Literal["SLA", "Workflow Hygiene", "Tra
     return "Workflow Hygiene"
 
 
+def infer_status_from_value(value: int) -> Literal["GREEN", "AMBER", "RED"]:
+    if value <= 5:
+        return "GREEN"
+    if value <= 15:
+        return "AMBER"
+    return "RED"
+
+
+def build_kpi_definitions_from_metrics(metrics: List[dict]) -> List[dict]:
+    return [
+        {
+            "metric_id": metric["metric_id"],
+            "definition": metric["title"],
+            "target": "GREEN <= 5%, AMBER 6-15%, RED > 15%",
+            "current_status": metric["status"],
+        }
+        for metric in metrics
+    ]
+
+
 def parse_metrics_from_text(text: str) -> List[dict]:
-    pattern = re.compile(
-        r"(AUD-\d{2})\s*[:\-]?\s*(.*?)\s*[:\-]\s*(\d{1,3})%\s*\((GREEN|AMBER|RED)\)",
-        flags=re.IGNORECASE,
-    )
+    normalized_text = re.sub(r"\s+", " ", text)
+    patterns = [
+        re.compile(
+            r"(AUD-\d{2})\s*[:\-\|]?\s*(.*?)\s*[:\-\|]\s*(\d{1,3})%\s*\((GREEN|AMBER|RED)\)",
+            flags=re.IGNORECASE,
+        ),
+        re.compile(
+            r"(AUD-\d{2})\s*[:\-\|]?\s*(.*?)\s*[:\-\|]\s*(\d{1,3})%\s*\|\s*(GREEN|AMBER|RED)",
+            flags=re.IGNORECASE,
+        ),
+        re.compile(
+            r"(AUD-\d{2})\s*[:\-\|]?\s*(.*?)\s*[:\-\|]\s*(\d{1,3})%",
+            flags=re.IGNORECASE,
+        ),
+    ]
 
     metrics = []
-    for match in pattern.finditer(text):
-        metric_id = match.group(1).upper()
-        title = re.sub(r"\s+", " ", match.group(2)).strip(" -*\t\n\r")
-        title = title if title else "Not available"
-        value = int(match.group(3))
-        value = max(0, min(value, 100))
-        status = match.group(4).upper()
+    for pattern in patterns:
+        for match in pattern.finditer(normalized_text):
+            metric_id = match.group(1).upper()
+            title = re.sub(r"\s+", " ", match.group(2)).strip(" -*\t\n\r|")
+            title = title if title else "Not available"
+            value = int(match.group(3))
+            value = max(0, min(value, 100))
+            status = match.group(4).upper() if len(match.groups()) >= 4 and match.group(4) else infer_status_from_value(value)
 
-        metrics.append(
-            {
-                "metric_id": metric_id,
-                "title": title,
-                "value": value,
-                "status": status,
-                "category": infer_category(title),
-                "insight": "Not available" if title == "Not available" else f"Observed {value}% for {title.lower()}.",
-            }
-        )
+            metrics.append(
+                {
+                    "metric_id": metric_id,
+                    "title": title,
+                    "value": value,
+                    "status": status,
+                    "category": infer_category(title),
+                    "insight": "Not available" if title == "Not available" else f"Observed {value}% for {title.lower()}.",
+                }
+            )
 
     # Keep only unique metric_ids in encounter order
     deduped_metrics = []
@@ -546,15 +603,7 @@ def build_report_from_uploaded_text(
         top_risks = ["Not available"]
         missing_fields.append("top_risks")
 
-    kpi_definitions = [
-        {
-            "metric_id": metric["metric_id"],
-            "definition": metric["title"],
-            "target": "GREEN <= 5%, AMBER 6-15%, RED > 15%",
-            "current_status": metric["status"],
-        }
-        for metric in parsed_metrics
-    ]
+    kpi_definitions = build_kpi_definitions_from_metrics(parsed_metrics)
 
     report_payload = JiraComplianceReport(
         report_id=REPORT_ID,
@@ -591,10 +640,14 @@ def extract_text_from_upload(uploaded_filename: str, file_bytes: bytes) -> str:
         if extension == ".docx":
             doc = Document(io.BytesIO(file_bytes))
             return "\n".join(paragraph.text for paragraph in doc.paragraphs)
+        if extension in {".txt", ".md"}:
+            return file_bytes.decode("utf-8", errors="ignore")
+        if extension in {".jpg", ".jpeg", ".png"}:
+            image = Image.open(io.BytesIO(file_bytes))
+            return pytesseract.image_to_string(image)
+        raise HTTPException(status_code=400, detail="Supported formats: PDF, DOCX, TXT, MD, JPG, JPEG, PNG")
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Unable to parse uploaded file: {exc}")
-
-    raise HTTPException(status_code=400, detail="Only PDF and DOCX uploads are supported")
 
 
 def build_summary(report: JiraComplianceReport) -> ReportSummary:
@@ -630,6 +683,41 @@ async def trim_history_to_limit(limit: int = 10):
 
     ids_to_delete = [doc["_id"] for doc in history_docs[limit:]]
     await history_collection.delete_many({"_id": {"$in": ids_to_delete}})
+
+
+async def save_report_snapshot(report_payload: dict) -> JiraComplianceReport:
+    report_payload["report_id"] = REPORT_ID
+    report_payload["generated_at"] = datetime.now(timezone.utc).isoformat()
+    await report_collection.replace_one({"report_id": REPORT_ID}, report_payload, upsert=True)
+    return JiraComplianceReport(**report_payload)
+
+
+def apply_widget_updates(report_data: dict, payload: WidgetUpdatePayload) -> dict:
+    if payload.period is not None:
+        report_data["period"] = payload.period
+    if payload.executive_score is not None:
+        report_data["executive_score"] = payload.executive_score
+    if payload.risk_level is not None:
+        report_data["risk_level"] = payload.risk_level
+    if payload.key_message is not None:
+        report_data["key_message"] = payload.key_message
+    if payload.metrics is not None:
+        metric_docs = [metric.model_dump() for metric in payload.metrics]
+        report_data["metrics"] = metric_docs
+        if payload.kpi_definitions is None:
+            report_data["kpi_definitions"] = build_kpi_definitions_from_metrics(metric_docs)
+    if payload.top_risks is not None:
+        report_data["top_risks"] = payload.top_risks
+    if payload.recommendations is not None:
+        report_data["recommendations"] = payload.recommendations
+    if payload.actions is not None:
+        report_data["actions"] = [action.model_dump() for action in payload.actions]
+    if payload.kpi_definitions is not None:
+        report_data["kpi_definitions"] = [definition.model_dump() for definition in payload.kpi_definitions]
+    if payload.narratives is not None:
+        report_data["narratives"] = [narrative.model_dump() for narrative in payload.narratives]
+
+    return report_data
 
 
 @api_router.get("/")
@@ -688,8 +776,8 @@ async def upload_report_preview(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="Uploaded file name is missing")
 
     extension = Path(file.filename).suffix.lower()
-    if extension not in {".pdf", ".docx"}:
-        raise HTTPException(status_code=400, detail="Only PDF and DOCX uploads are supported")
+    if extension not in {".pdf", ".docx", ".txt", ".md", ".jpg", ".jpeg", ".png"}:
+        raise HTTPException(status_code=400, detail="Supported formats: PDF, DOCX, TXT, MD, JPG, JPEG, PNG")
 
     file_bytes = await file.read()
     if not file_bytes:
@@ -733,11 +821,7 @@ async def apply_report_preview(preview_id: str):
         raise HTTPException(status_code=404, detail="Preview not found")
 
     report_doc = preview_doc["report"]
-    report_doc["report_id"] = REPORT_ID
-    report_doc["generated_at"] = datetime.now(timezone.utc).isoformat()
-
-    await report_collection.replace_one({"report_id": REPORT_ID}, report_doc, upsert=True)
-    updated_report = JiraComplianceReport(**report_doc)
+    updated_report = await save_report_snapshot(report_doc)
     summary = build_summary(updated_report)
 
     history_doc = {
@@ -749,11 +833,70 @@ async def apply_report_preview(preview_id: str):
         "executive_score": updated_report.executive_score,
         "risk_level": updated_report.risk_level,
         "red_controls": summary.red_controls,
+        "report_snapshot": updated_report.model_dump(),
     }
     await history_collection.insert_one(history_doc.copy())
     await trim_history_to_limit(limit=10)
 
     return updated_report
+
+
+@api_router.patch("/report/widgets", response_model=JiraComplianceReport)
+async def update_report_widgets(payload: WidgetUpdatePayload):
+    current_report = await get_or_seed_report()
+    updated_payload = apply_widget_updates(current_report.model_dump(), payload)
+    return await save_report_snapshot(updated_payload)
+
+
+@api_router.post("/report/rollback/{history_id}", response_model=JiraComplianceReport)
+async def rollback_report_from_history(history_id: str, options: RollbackOptions):
+    if not any(options.model_dump().values()):
+        raise HTTPException(status_code=400, detail="Select at least one section to restore")
+
+    history_doc = await history_collection.find_one({"history_id": history_id}, {"_id": 0})
+    if not history_doc or "report_snapshot" not in history_doc:
+        raise HTTPException(status_code=404, detail="Rollback snapshot not found")
+
+    snapshot = history_doc["report_snapshot"]
+    current_report = await get_or_seed_report()
+    current_payload = current_report.model_dump()
+
+    if options.restore_summary:
+        current_payload["period"] = snapshot.get("period", current_payload["period"])
+        current_payload["executive_score"] = snapshot.get("executive_score", current_payload["executive_score"])
+        current_payload["risk_level"] = snapshot.get("risk_level", current_payload["risk_level"])
+        current_payload["key_message"] = snapshot.get("key_message", current_payload["key_message"])
+    if options.restore_metrics:
+        current_payload["metrics"] = snapshot.get("metrics", current_payload["metrics"])
+    if options.restore_risks:
+        current_payload["top_risks"] = snapshot.get("top_risks", current_payload["top_risks"])
+    if options.restore_recommendations:
+        current_payload["recommendations"] = snapshot.get("recommendations", current_payload["recommendations"])
+    if options.restore_actions:
+        current_payload["actions"] = snapshot.get("actions", current_payload["actions"])
+    if options.restore_kpi_definitions:
+        current_payload["kpi_definitions"] = snapshot.get("kpi_definitions", current_payload["kpi_definitions"])
+    if options.restore_narratives:
+        current_payload["narratives"] = snapshot.get("narratives", current_payload["narratives"])
+
+    rolled_back_report = await save_report_snapshot(current_payload)
+    summary = build_summary(rolled_back_report)
+
+    rollback_history = {
+        "history_id": str(uuid.uuid4()),
+        "preview_id": history_doc.get("preview_id", "rollback"),
+        "uploaded_filename": f"ROLLBACK::{history_doc.get('uploaded_filename', 'snapshot')}",
+        "uploaded_at": datetime.now(timezone.utc).isoformat(),
+        "period": rolled_back_report.period,
+        "executive_score": rolled_back_report.executive_score,
+        "risk_level": rolled_back_report.risk_level,
+        "red_controls": summary.red_controls,
+        "report_snapshot": rolled_back_report.model_dump(),
+    }
+    await history_collection.insert_one(rollback_history.copy())
+    await trim_history_to_limit(limit=10)
+
+    return rolled_back_report
 
 
 @api_router.get("/report/upload-history", response_model=List[UploadHistoryItem])

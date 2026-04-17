@@ -1,0 +1,4 @@
+Executive Summary UI-ALPHA KPIs
+last 30 days
+AUD-01: Bugs without bug owner - 11% (AMBER)
+AUD-13: Priority 1 tickets not resolved - 44% (RED)

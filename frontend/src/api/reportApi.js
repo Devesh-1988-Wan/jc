@@ -46,3 +46,13 @@ export const fetchUploadHistory = async () => {
   const response = await apiClient.get("/report/upload-history");
   return response.data;
 };
+
+export const rollbackFromHistory = async (historyId, options) => {
+  const response = await apiClient.post(`/report/rollback/${historyId}`, options);
+  return response.data;
+};
+
+export const updateReportWidgets = async (payload) => {
+  const response = await apiClient.patch("/report/widgets", payload);
+  return response.data;
+};
