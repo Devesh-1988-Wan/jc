@@ -1,34 +1,52 @@
-.App-logo {
-    height: 40vmin;
-    pointer-events: none;
+.report-app {
+    background:
+        radial-gradient(circle at 8% 6%, rgba(0, 47, 167, 0.09), transparent 24%),
+        radial-gradient(circle at 92% 4%, rgba(245, 158, 11, 0.08), transparent 22%),
+        linear-gradient(180deg, #ffffff 0%, #f9fafb 100%);
 }
 
-@media (prefers-reduced-motion: no-preference) {
-    .App-logo {
-        animation: App-logo-spin infinite 20s linear;
-    }
+.report-card {
+    transition-property: transform, border-color, box-shadow;
+    transition-duration: 200ms;
+    transition-timing-function: ease-in-out;
 }
 
-.App-header {
-    background-color: #0f0f10;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    font-size: calc(10px + 2vmin);
-    color: white;
+.report-card:hover {
+    transform: translateY(-2px);
+    border-color: #d1d5db;
+    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
 }
 
-.App-link {
-    color: #61dafb;
+.slide-canvas {
+    background-size: cover;
+    background-position: center;
 }
 
-@keyframes App-logo-spin {
+.fade-in-up {
+    opacity: 0;
+    transform: translateY(10px);
+    animation: fadeInUp 450ms ease forwards;
+}
+
+.stagger-1 {
+    animation-delay: 80ms;
+}
+
+.stagger-2 {
+    animation-delay: 140ms;
+}
+
+.stagger-3 {
+    animation-delay: 200ms;
+}
+
+@keyframes fadeInUp {
     from {
-        transform: rotate(0deg);
+        opacity: 0;
+        transform: translateY(10px);
     }
     to {
-        transform: rotate(360deg);
+        opacity: 1;
+        transform: translateY(0);
     }
 }
