@@ -276,6 +276,11 @@ export default function UploadReportPage() {
           <p className="text-sm text-[#4B5563]" data-testid="upload-selected-file-name">
             Selected file: {selectedFile?.name || "None"}
           </p>
+          {(isPreviewing || isRefreshingAIMetrics) && (
+            <p className="text-sm text-[#002FA7]" data-testid="upload-ai-processing-note">
+              AI processing in progress — this can take up to 30–60 seconds for some files.
+            </p>
+          )}
         </CardContent>
       </Card>
 

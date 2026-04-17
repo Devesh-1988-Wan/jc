@@ -6,8 +6,10 @@ Create a Jira compliance report for leadership.
 ## Architecture Decisions
 - **Frontend:** React dashboard with route-based pages for executive summary, slide brief, detailed findings, KPI appendix, upload/update, and widget editor.
 - **Backend:** FastAPI service exposing report, summary, action tracking, upload preview/apply, upload history, rollback, and widget-update endpoints.
+- **Backend:** FastAPI service exposing report, summary, action tracking, upload preview/apply, upload history, rollback, widget-update, AI context generation, and AI metric-refresh endpoints.
 - **Database:** MongoDB stores active report snapshot, upload previews, and retained upload history (latest 10).
 - **Document Parsing:** PDF, DOCX, TXT, MD, JPG, PNG parsing using `pypdf`, `python-docx`, text parsing, and OCR (`pytesseract` + `Pillow`).
+- **AI Layer:** OpenAI GPT-5.2 via Emergent universal key for automatic context generation and AI-assisted metric/graph updates.
 
 ## User Personas
 - **C-level Executives:** Need quick risk posture and strategic actions.
@@ -38,12 +40,17 @@ Create a Jira compliance report for leadership.
   - Risks/recommendations widget
   - Actions widget
 - **2026-04-17:** Expanded parser support to additional formats (TXT/MD/JPG/PNG + OCR) and improved metric extraction robustness.
+- **2026-04-17:** Integrated AI context generation on upload preview (automatic full section pack) and persisted AI context in applied snapshots/history.
+- **2026-04-17:** Added AI-assisted metric refresh provision (`Refresh Metrics with AI`) to update graph-driving metrics, risks, and recommendations from uploaded report content.
+- **2026-04-17:** Added multipart fallback handling for clients that send incorrect JSON content-type with file uploads, improving compatibility.
+- **2026-04-17:** Increased frontend upload/apply/AI refresh API timeouts to support longer AI processing latency.
 
 ## Prioritized Backlog
 
 ### P0 (Critical)
 - Add stronger parser mapping confidence scoring and section confidence display in preview.
 - Add richer OCR fallback handling for low-quality scans (language packs, preprocessing pipeline).
+- Add AI response guardrails (schema validation + retry policy + confidence score exposure per generated section).
 
 ### P1 (Important)
 - Add metric-level visual diff filters (show only changed/added/removed).
@@ -60,3 +67,4 @@ Create a Jira compliance report for leadership.
 2. Add rollback preflight confirmation and optional notes/audit reason.
 3. Improve OCR preprocessing for noisy screenshots/scans.
 4. Add export-ready leadership PDF/PPT report package.
+5. Add user control for AI model/system prompt presets per organization.

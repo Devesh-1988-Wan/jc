@@ -33,12 +33,15 @@ export const uploadReportPreview = async (file) => {
 
   const response = await apiClient.post("/report/upload-preview", formData, {
     headers: { "Content-Type": "multipart/form-data" },
+    timeout: 120000,
   });
   return response.data;
 };
 
 export const applyReportPreview = async (previewId) => {
-  const response = await apiClient.post(`/report/apply-preview/${previewId}`);
+  const response = await apiClient.post(`/report/apply-preview/${previewId}`, null, {
+    timeout: 60000,
+  });
   return response.data;
 };
 
@@ -58,6 +61,8 @@ export const updateReportWidgets = async (payload) => {
 };
 
 export const refreshPreviewMetricsWithAI = async (previewId) => {
-  const response = await apiClient.post(`/report/previews/${previewId}/ai-metrics`);
+  const response = await apiClient.post(`/report/previews/${previewId}/ai-metrics`, null, {
+    timeout: 120000,
+  });
   return response.data;
 };
