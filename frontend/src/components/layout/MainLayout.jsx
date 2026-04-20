@@ -1,3 +1,4 @@
+import React from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import { ChartBar, FileArrowUp, FileText, ListChecks, Slideshow, Sliders } from "@phosphor-icons/react";
 
