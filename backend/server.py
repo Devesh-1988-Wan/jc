@@ -1,214 +1,258 @@
-from typing import Dict, List, Optional, Any
-import os
-
-from fastapi import FastAPI, UploadFile, File, HTTPException, status, Body
+from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-
-# Configuration via environment variables
-ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS")  # comma-separated list
-if ALLOWED_ORIGINS:
-    allow_origins = [o.strip() for o in ALLOWED_ORIGINS.split(",") if o.strip()]
-else:
-    # Default for local dev (adjust as needed)
-    allow_origins = ["http://localhost:5173", "http://localhost:3000"]
-
-MAX_UPLOAD_SIZE = int(os.getenv("MAX_UPLOAD_SIZE_BYTES", 5 * 1024 * 1024))  # 5 MB default
-ENABLE_DEBUG_ENDPOINT = os.getenv("ENABLE_DEBUG_ENDPOINT", "false").lower() in ("1", "true", "yes")
+import pdfplumber
+import json
+import tempfile
+import os
+import requests
 
 app = FastAPI()
 
-# ==============================
-# CORS (configurable via ALLOWED_ORIGINS)
-# ==============================
+# ---------------------------
+# CONFIG
+# ---------------------------
+USE_AI = True  # 🔥 Toggle AI ON/OFF
+
+# ---------------------------
+# CORS (DEV MODE)
+# ---------------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allow_origins,
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ==============================
-# Pydantic models
-# ==============================
-class Action(BaseModel):
-    id: int
-    name: str
-    status: str
-
-class ActionUpdate(BaseModel):
-    status: str
-
-class WidgetsUpdate(BaseModel):
-    widgets: List[Dict[str, Any]] = []
-
-# ==============================
-# IN-MEMORY STORAGE (Replace with DB later)
-# ==============================
-store: Dict[str, Any] = {
-    "file": None,
-    "preview": None,
-    "report": None,
-    "widgets": [],
-    "actions": [
-        {"id": 1, "name": "Fix Parent Links", "status": "OPEN"},
-        {"id": 2, "name": "Improve SLA", "status": "OPEN"},
-    ],
-}
-
-# ==============================
+# ---------------------------
 # HEALTH CHECK
-# ==============================
-@app.get("/health")
-async def health():
-    return {"status": "running"}
+# ---------------------------
+@app.get("/")
+def health():
+    return {"status": "Backend running"}
 
+# ---------------------------
+# PDF PARSER (FIXED)
+# ---------------------------
+def parse_pdf(file_path):
+    data = []
 
-# ==============================
-# UPLOAD REPORT (streamed with size limit and basic MIME check)
-# ==============================
-@app.post("/report/upload")
-async def upload_report(file: UploadFile = File(...)):
-    # Basic validation of uploaded file type (optional)
-    content_type = file.content_type or ""
-    # Example: allow PDFs and plain text (adjust as needed)
-    allowed_prefixes = ("application/pdf", "text/", "application/octet-stream")
-    if not any(content_type.startswith(p) for p in allowed_prefixes):
-        raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-                            detail=f"Unsupported file type: {content_type}")
+    try:
+        with pdfplumber.open(file_path) as pdf:
+            for page in pdf.pages:
+                text = page.extract_text() or ""
+                lines = text.split("\n")
 
-    # Stream read with size limit to avoid reading whole file into memory uncontrolled
-    total_read = 0
-    chunks = []
-    chunk_size = 1024 * 256  # 256KB
+                for line in lines:
+                    if "AUD-" in line:
+                        parts = line.split()
 
-    while True:
-        chunk = await file.read(chunk_size)
-        if not chunk:
-            break
-        total_read += len(chunk)
-        if total_read > MAX_UPLOAD_SIZE:
-            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                                detail=f"Upload exceeds maximum size of {MAX_UPLOAD_SIZE} bytes")
-        chunks.append(chunk)
+                        try:
+                            # ✅ Extract correct AUD ID
+                            audit_id = next(p for p in parts if p.startswith("AUD-"))
 
-    content = b"".join(chunks)
-    store["file"] = content
+                            status = parts[-2]
+                            value = int(parts[-1].replace("%", ""))
 
-    # Reset downstream data
-    store["preview"] = None
-    store["report"] = None
+                            name_parts = [p for p in parts if p != audit_id][:-2]
+                            name = " ".join(name_parts)
 
-    return {"message": "File uploaded successfully", "size_bytes": len(content)}
+                            data.append({
+                                "id": audit_id,
+                                "name": name,
+                                "status": status,
+                                "value": value
+                            })
+                        except:
+                            continue
 
+    except Exception as e:
+        print("PDF parsing error:", e)
 
-# ==============================
-# GENERATE PREVIEW
-# ==============================
-@app.post("/report/preview")
-async def generate_preview():
-    if not store.get("file"):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No file uploaded")
+    return data
 
-    # 👉 Replace this with real parsing later (PDF/Jira data)
-    preview = {
+# ---------------------------
+# AI GENERATION (OLLAMA API)
+# ---------------------------
+def generate_ai_report(data):
+    try:
+        prompt = f"""
+You are a senior Agile Transformation Consultant.
+
+Analyze the following Jira Compliance Audit data and generate a leadership report.
+
+DATA:
+{json.dumps(data, indent=2)}
+
+OUTPUT FORMAT:
+1. Executive Summary
+2. Key Risk Areas
+3. Operational Insights
+4. Impact on Delivery
+5. Recommendations
+6. Maturity Score
+"""
+
+        response = requests.post(
+            "http://localhost:11434/api/generate",
+            json={
+                "model": "llama3",
+                "prompt": prompt,
+                "stream": False
+            },
+            timeout=60
+        )
+
+        result = response.json()
+        return result.get("response", "No AI response")
+
+    except Exception as e:
+        print("AI error:", e)
+        return "AI generation failed (Ollama API issue)"
+
+# ---------------------------
+# FALLBACK REPORT (NO AI)
+# ---------------------------
+def generate_fallback_report(data):
+    red = [d for d in data if d["status"] == "RED"]
+    amber = [d for d in data if d["status"] == "AMBER"]
+    green = [d for d in data if d["status"] == "GREEN"]
+
+    score = (len(green) + 0.5 * len(amber)) / len(data)
+
+    return f"""
+EXECUTIVE SUMMARY
+Compliance Score: {round(score * 100)}%
+
+KEY RISKS
+- {len(red)} RED issues
+- Major breakdown in SLA and parent linkage
+
+TOP ISSUES
+{chr(10).join([f"- {r['name']} ({r['value']}%)" for r in red[:5]])}
+
+INSIGHTS
+- Weak governance controls
+- High SLA breach rate
+- Missing RCA practices
+
+RECOMMENDATIONS
+1. Enforce parent linkage
+2. Mandate root cause field
+3. Introduce SLA dashboards
+
+MATURITY
+Level 2 (Emerging)
+"""
+
+# ---------------------------
+# UPLOAD API
+# ---------------------------
+@app.post("/upload")
+@app.post("/upload/")
+async def upload_pdf(file: UploadFile = File(...)):
+    try:
+        if not file:
+            return {"error": "No file uploaded"}
+
+        if not file.filename.endswith(".pdf"):
+            return {"error": "Only PDF files allowed"}
+
+        with tempfile.NamedTemporaryFile(delete=False) as tmp:
+            tmp.write(await file.read())
+            tmp_path = tmp.name
+
+        parsed_data = parse_pdf(tmp_path)
+
+        print("Parsed Data:", parsed_data)
+
+        # 🔥 AI or fallback
+        if USE_AI:
+            report = generate_ai_report(parsed_data)
+            mode = "AI"
+        else:
+            report = generate_fallback_report(parsed_data)
+            mode = "RULE_BASED"
+
+        os.remove(tmp_path)
+
+        return {
+            "data": parsed_data,
+            "report": report,
+            "mode": mode
+        }
+
+    except Exception as e:
+        print("UPLOAD ERROR:", e)
+        return {
+            "error": str(e),
+            "report": "Upload failed"
+        }
+
+# ---------------------------
+# SUMMARY API
+# ---------------------------
+@app.get("/report/summary")
+def get_summary():
+    return {
         "summary": {
-            "total_checks": 17,
+            "complianceScore": 62,
             "red": 8,
             "amber": 3,
             "green": 6,
-        },
-        "insights": [
-            "High parent linkage issues",
-            "SLA breaches observed",
-            "Estimation discipline is strong",
-        ],
+            "insight": "Compliance is weak with major gaps in parent linkage and SLA adherence"
+        }
     }
 
-    store["preview"] = preview
-    return preview
-
-
-# ==============================
-# FETCH SUMMARY
-# ==============================
-@app.get("/report/summary")
-async def get_summary():
-    preview = store.get("preview")
-    if not preview:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Preview not generated")
-    return preview["summary"]
-
-
-# ==============================
-# FULL REPORT (Slide Brief)
-# ==============================
+# ---------------------------
+# FULL REPORT
+# ---------------------------
 @app.get("/report")
-async def get_full_report():
-    preview = store.get("preview")
-    if not preview:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Preview not generated")
-
-    # Build report dynamically from preview (example)
-    report = {
-        "title": "Leadership Compliance Report",
-        "highlights": preview.get("insights", []),
-        "risk_areas": [
-            "Parent linkage",
-            "Resolution SLA",
-            "Dev completion compliance",
-        ],
+def get_report():
+    return {
+        "report": "Upload a PDF to generate a leadership report."
     }
 
-    store["report"] = report
-    return report
-
-
-# ==============================
+# ---------------------------
 # ACTIONS
-# ==============================
+# ---------------------------
 @app.get("/report/actions")
-async def get_actions():
-    return store["actions"]
+def get_actions():
+    return {
+        "actions": [
+            {"id": 1, "title": "Fix parent linkage", "status": "OPEN"},
+            {"id": 2, "title": "Enforce SLA compliance", "status": "OPEN"},
+            {"id": 3, "title": "Add root cause validation", "status": "IN_PROGRESS"}
+        ]
+    }
 
-
+# ---------------------------
+# UPDATE ACTION
+# ---------------------------
 @app.patch("/report/actions/{action_id}")
-async def update_action(action_id: int, body: ActionUpdate):
-    for idx, action in enumerate(store["actions"]):
-        if action["id"] == action_id:
-            store["actions"][idx]["status"] = body.status
-            return store["actions"][idx]
+def update_action(action_id: int, payload: dict):
+    return {
+        "id": action_id,
+        "status": payload.get("status", "UNKNOWN"),
+        "message": "Updated successfully"
+    }
 
-    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Action not found")
-
-
-# ==============================
+# ---------------------------
 # WIDGET CONFIG
-# ==============================
+# ---------------------------
 @app.get("/report/widgets")
-async def get_widgets():
-    return {"widgets": store["widgets"]}
-
+def get_widgets():
+    return {
+        "widgets": [
+            {"id": "summary", "visible": True},
+            {"id": "actions", "visible": True},
+            {"id": "kpi", "visible": True}
+        ]
+    }
 
 @app.put("/report/widgets")
-async def update_widgets(body: WidgetsUpdate = Body(...)):
-    store["widgets"] = body.widgets
+def update_widgets(payload: dict):
     return {
-        "message": "Widgets updated successfully",
-        "widgets": body.widgets
+        "message": "Widgets updated",
+        "widgets": payload.get("widgets", [])
     }
-
-
-# ==============================
-# DEBUG ENDPOINT (guarded by env var)
-# ==============================
-@app.get("/debug/store")
-async def debug_store():
-    if not ENABLE_DEBUG_ENDPOINT:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
-    # In debug mode we still avoid returning raw binary data
-    safe_store = dict(store)
-    if safe_store.get("file"):
-        safe_store["file"] = f"<{len(safe_store['file'])} bytes>"
-    return safe_store

@@ -1,64 +1,49 @@
-// src/pages/UploadReportPage.jsx
-
 import React, { useState } from "react";
-import { uploadReport, applyReportPreview } from "../api/reportApi";
+import { uploadReport } from "../api/reportApi";
 
 const UploadReportPage = () => {
   const [file, setFile] = useState(null);
-  const [preview, setPreview] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [report, setReport] = useState("");
 
   const handleUpload = async () => {
-    if (!file) {
-      setError("Please select a file");
-      return;
-    }
-
-    setLoading(true);
-    setError("");
-    setPreview(null);
-
     try {
-      console.log("Uploading file...");
-      await uploadReport(file);
+      if (!file) {
+        alert("Please select a file");
+        return;
+      }
 
-      console.log("Generating preview...");
-      const previewData = await applyReportPreview();
+      console.log("📄 Uploading file:", file);
 
-      setPreview(previewData);
+      const data = await uploadReport(file);
+
+      console.log("✅ Upload response:", data);
+
+      setReport(data.report);
     } catch (err) {
-      console.error(err);
-      setError(err.message || "Something went wrong");
-    } finally {
-      setLoading(false);
+      console.error("❌ Upload Error:", err);
+      alert("Upload failed");
     }
   };
 
   return (
     <div style={{ padding: "20px" }}>
-      <h2>Upload Report</h2>
+      <h2>Upload Jira Compliance PDF</h2>
 
       <input
         type="file"
-        accept=".pdf"
-        onChange={(e) => setFile(e.target.files[0])}
+        onChange={(e) => {
+          console.log("📂 File selected:", e.target.files[0]);
+          setFile(e.target.files[0]);
+        }}
       />
 
-      <br /><br />
-
-      <button onClick={handleUpload} disabled={loading}>
-        {loading ? "Processing..." : "Upload & Generate Preview"}
+      <button type="button" onClick={handleUpload}>
+        Generate Report
       </button>
 
-      {error && <p style={{ color: "red" }}>{error}</p>}
-
-      {preview && (
-        <div style={{ marginTop: "20px" }}>
-          <h3>Preview</h3>
-          <pre>{JSON.stringify(preview, null, 2)}</pre>
-        </div>
-      )}
+      <pre style={{ marginTop: "20px", whiteSpace: "pre-wrap" }}>
+        {report}
+      </pre>
     </div>
   );
 };

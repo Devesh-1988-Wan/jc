@@ -9,25 +9,26 @@ const ExecutiveSummaryPage = () => {
   useEffect(() => {
     const loadSummary = async () => {
       try {
-        setLoading(true);
-        setError("");
+        const data = await fetchReportSummary();
 
-        const res = await fetchReportSummary();
+        console.log("SUMMARY API RESPONSE:", data);
 
-        if (!res || !res.summary) {
-          throw new Error("No summary available");
+        if (!data || !data.summary) {
+          setError("No summary available");
+          return;
         }
 
-        setSummary(res.summary);
+        setSummary(data.summary);
+
       } catch (err) {
-        console.error(err);
-        setError("Failed to fetch summary. Upload report first.");
+        console.error("Summary Error:", err);
+        setError("Failed to load summary");
       } finally {
-        setLoading(false);
+        setLoading(false); // ✅ ALWAYS stop loading
       }
     };
 
-    loadSummary();
+    loadSummary(); // ✅ CORRECT placement
   }, []);
 
   return (
@@ -38,7 +39,7 @@ const ExecutiveSummaryPage = () => {
       {loading && <p>Loading summary...</p>}
 
       {/* ERROR */}
-      {error && (
+      {!loading && error && (
         <p style={{ color: "red" }}>
           {error}
         </p>
@@ -55,7 +56,9 @@ const ExecutiveSummaryPage = () => {
           }}
         >
           <p style={{ whiteSpace: "pre-wrap" }}>
-            {summary}
+            {typeof summary === "string"
+              ? summary
+              : JSON.stringify(summary, null, 2)}
           </p>
         </div>
       )}
