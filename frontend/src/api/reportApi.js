@@ -1,97 +1,80 @@
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
 // ==============================
-// FETCH REPORT SUMMARY (Executive Page)
+// UPLOAD REPORT
+// ==============================
+export const uploadReport = async (file) => {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const res = await fetch(`${BASE_URL}/report/upload`, {
+    method: "POST",
+    body: formData,
+  });
+
+  return res.json();
+};
+
+// ==============================
+// FETCH SUMMARY
 // ==============================
 export const fetchReportSummary = async () => {
-  try {
-    const res = await fetch(`${BASE_URL}/report/summary`);
-    if (!res.ok) throw new Error("Failed to fetch summary");
-    return await res.json();
-  } catch (err) {
-    console.error("fetchReportSummary error:", err);
-    return null;
-  }
+  const res = await fetch(`${BASE_URL}/report/summary`);
+  return res.json();
 };
 
 // ==============================
-// FETCH KPI DATA (Executive Page)
-// ==============================
-export const fetchKpiData = async () => {
-  try {
-    const res = await fetch(`${BASE_URL}/report/kpis`);
-    if (!res.ok) throw new Error("Failed to fetch KPIs");
-    return await res.json();
-  } catch (err) {
-    console.error("fetchKpiData error:", err);
-    return [];
-  }
-};
-
-// ==============================
-// ✅ ADD THIS → USED BY KPI APPENDIX PAGE
+// FETCH RAW REPORT
 // ==============================
 export const fetchReport = async () => {
-  try {
-    const res = await fetch(`${BASE_URL}/report`);
-    if (!res.ok) throw new Error("Failed to fetch report");
-    return await res.json();
-  } catch (err) {
-    console.error("fetchReport error:", err);
-    return { kpi_definitions: [] }; // safe fallback
-  }
+  const res = await fetch(`${BASE_URL}/report`);
+  return res.json();
 };
 
 // ==============================
-// ✅ ADD THIS → USED BY ACTION TRACKER
+// GENERATE PREVIEW
+// ==============================
+export const applyReportPreview = async () => {
+  const res = await fetch(`${BASE_URL}/report/preview`, {
+    method: "POST",
+  });
+  return res.json();
+};
+
+// ==============================
+// FETCH ACTIONS ✅ FIXED
 // ==============================
 export const fetchReportActions = async () => {
-  try {
-    const res = await fetch(`${BASE_URL}/actions`);
-    if (!res.ok) throw new Error("Failed to fetch actions");
-    return await res.json();
-  } catch (err) {
-    console.error("fetchReportActions error:", err);
-    return [];
-  }
+  const res = await fetch(`${BASE_URL}/report/actions`);
+  return res.json();
 };
 
 // ==============================
-// PATCH ACTION STATUS
+// UPDATE WIDGETS ✅ FIXED
 // ==============================
-export const patchActionStatus = async (id, status) => {
-  try {
-    const res = await fetch(`${BASE_URL}/actions/${id}`, {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ status }),
-    });
+export const updateReportWidgets = async (data) => {
+  const res = await fetch(`${BASE_URL}/report/widgets`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(data),
+  });
 
-    if (!res.ok) throw new Error("Failed to update action");
-
-    return await res.json();
-  } catch (err) {
-    console.error("patchActionStatus error:", err);
-    return null;
-  }
+  return res.json();
 };
 
 // ==============================
-// GENERATE REPORT
+// PATCH STATUS
 // ==============================
-export const generateReport = async () => {
-  try {
-    const res = await fetch(`${BASE_URL}/report/generate`, {
-      method: "POST",
-    });
+export const patchActionStatus = async (data) => {
+  const res = await fetch(`${BASE_URL}/report/status`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(data),
+  });
 
-    if (!res.ok) throw new Error("Report generation failed");
-
-    return await res.json();
-  } catch (err) {
-    console.error("generateReport error:", err);
-    return null;
-  }
+  return res.json();
 };
