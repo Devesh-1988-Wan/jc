@@ -1,102 +1,97 @@
-import axios from "axios";
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
-// ✅ Base URL from Vite env
-const BASE_URL = import.meta.env.VITE_BACKEND_URL;
-
-// ⚠️ Debug (remove later if you want)
-console.log("API BASE URL:", BASE_URL);
-
-// ✅ Axios instance
-const apiClient = axios.create({
-  baseURL: `${BASE_URL}/api`,
-  timeout: 60000,
-});
-
-// ---------------- REPORT ---------------- //
-
-// Fetch full report (single source of truth)
-export const fetchReport = async () => {
-  const response = await apiClient.get("/report");
-  return response.data;
-};
-
-// Backward compatibility (prevents crashes in older pages)
+// ==============================
+// FETCH REPORT SUMMARY (Executive Page)
+// ==============================
 export const fetchReportSummary = async () => {
-  return fetchReport();
-};
-
-export const fetchReportActions = async () => {
-  const report = await fetchReport();
-  return report.actions || [];
-};
-
-// ---------------- PREVIEW ---------------- //
-
-export const uploadReportPreview = async (file) => {
-  const formData = new FormData();
-  formData.append("file", file);
-
-  const response = await apiClient.post(
-    "/report/upload-preview",
-    formData,
-    {
-      headers: {
-        "Content-Type": "multipart/form-data",
-      },
-      timeout: 120000, // AI processing buffer
-    }
-  );
-
-  return response.data;
-};
-
-// ---------------- APPLY ---------------- //
-
-export const applyReportPreview = async (previewId) => {
-  const response = await apiClient.post(
-    `/report/apply-preview/${previewId}`
-  );
-  return response.data;
-};
-
-// ---------------- HISTORY ---------------- //
-
-export const fetchUploadHistory = async () => {
-  const response = await apiClient.get("/report/upload-history");
-  return response.data;
-};
-
-// ---------------- ROLLBACK ---------------- //
-
-export const rollbackFromHistory = async (historyId, options) => {
-  const response = await apiClient.post(
-    `/report/rollback/${historyId}`,
-    options
-  );
-  return response.data;
-};
-
-// ---------------- ACTION UPDATE (FIXED) ---------------- //
-
-export const patchActionStatus = async (actionId, status) => {
-  const response = await apiClient.patch(
-    `/report/actions/${actionId}`,
-    { status }
-  );
-  return response.data;
-};
-
-// ---------------- AI REFRESH (OPTIONAL / FUTURE SAFE) ---------------- //
-
-// Safe wrapper: won’t crash if backend endpoint not present
-export const refreshPreviewMetricsWithAI = async (previewId) => {
   try {
-    const response = await apiClient.post(
-      `/report/previews/${previewId}/ai-metrics`
-    );
-    return response.data;
+    const res = await fetch(`${BASE_URL}/report/summary`);
+    if (!res.ok) throw new Error("Failed to fetch summary");
+    return await res.json();
   } catch (err) {
-    console.warn("AI refresh endpoint not available yet");
+    console.error("fetchReportSummary error:", err);
+    return null;
+  }
+};
+
+// ==============================
+// FETCH KPI DATA (Executive Page)
+// ==============================
+export const fetchKpiData = async () => {
+  try {
+    const res = await fetch(`${BASE_URL}/report/kpis`);
+    if (!res.ok) throw new Error("Failed to fetch KPIs");
+    return await res.json();
+  } catch (err) {
+    console.error("fetchKpiData error:", err);
+    return [];
+  }
+};
+
+// ==============================
+// ✅ ADD THIS → USED BY KPI APPENDIX PAGE
+// ==============================
+export const fetchReport = async () => {
+  try {
+    const res = await fetch(`${BASE_URL}/report`);
+    if (!res.ok) throw new Error("Failed to fetch report");
+    return await res.json();
+  } catch (err) {
+    console.error("fetchReport error:", err);
+    return { kpi_definitions: [] }; // safe fallback
+  }
+};
+
+// ==============================
+// ✅ ADD THIS → USED BY ACTION TRACKER
+// ==============================
+export const fetchReportActions = async () => {
+  try {
+    const res = await fetch(`${BASE_URL}/actions`);
+    if (!res.ok) throw new Error("Failed to fetch actions");
+    return await res.json();
+  } catch (err) {
+    console.error("fetchReportActions error:", err);
+    return [];
+  }
+};
+
+// ==============================
+// PATCH ACTION STATUS
+// ==============================
+export const patchActionStatus = async (id, status) => {
+  try {
+    const res = await fetch(`${BASE_URL}/actions/${id}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ status }),
+    });
+
+    if (!res.ok) throw new Error("Failed to update action");
+
+    return await res.json();
+  } catch (err) {
+    console.error("patchActionStatus error:", err);
+    return null;
+  }
+};
+
+// ==============================
+// GENERATE REPORT
+// ==============================
+export const generateReport = async () => {
+  try {
+    const res = await fetch(`${BASE_URL}/report/generate`, {
+      method: "POST",
+    });
+
+    if (!res.ok) throw new Error("Report generation failed");
+
+    return await res.json();
+  } catch (err) {
+    console.error("generateReport error:", err);
     return null;
   }
 };

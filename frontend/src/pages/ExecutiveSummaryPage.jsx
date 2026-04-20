@@ -3,8 +3,10 @@ import { ArrowRight, ChartBar, ShieldCheck, WarningCircle } from "@phosphor-icon
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
-import { fetchReport, fetchReportSummary } from "../api/reportApi";
 import StatusBadge from "../components/report/StatusBadge";
+
+// ✅ FIX: import BOTH APIs
+import { fetchReport, fetchReportSummary } from "../api/reportApi";
 
 const chartColor = {
   GREEN: "#10B981",
@@ -26,31 +28,36 @@ export default function ExecutiveSummaryPage() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [reportData, summaryData] = await Promise.all([fetchReport(), fetchReportSummary()]);
-        setReport(reportData);
-        setSummary(summaryData);
-      } catch (loadError) {
+        const [reportData, summaryData] = await Promise.all([
+          fetchReport(),
+          fetchReportSummary(),
+        ]);
+
+        // ✅ Safe fallback to prevent crashes
+        setReport(reportData || {});
+        setSummary(summaryData || {});
+      } catch (err) {
+        console.error(err);
         setError("Unable to load leadership report data.");
       }
     };
+
     loadData();
   }, []);
 
   const statusData = useMemo(() => {
-    if (!summary) {
-      return [];
-    }
+    if (!summary) return [];
 
     return [
-      { name: "Green", value: summary.green_controls, color: chartColor.GREEN },
-      { name: "Amber", value: summary.amber_controls, color: chartColor.AMBER },
-      { name: "Red", value: summary.red_controls, color: chartColor.RED },
+      { name: "Green", value: summary.green_controls || 0, color: chartColor.GREEN },
+      { name: "Amber", value: summary.amber_controls || 0, color: chartColor.AMBER },
+      { name: "Red", value: summary.red_controls || 0, color: chartColor.RED },
     ];
   }, [summary]);
 
   if (error) {
     return (
-      <div className="rounded-sm border border-[#DC2626]/30 bg-[#FEF2F2] p-6 text-[#991B1B]" data-testid="summary-load-error">
+      <div className="rounded-sm border border-red-300 bg-red-50 p-6 text-red-800">
         {error}
       </div>
     );
@@ -58,7 +65,7 @@ export default function ExecutiveSummaryPage() {
 
   if (!report || !summary) {
     return (
-      <div className="rounded-sm border border-[#E5E7EB] bg-white p-8" data-testid="summary-loading-state">
+      <div className="rounded-sm border border-gray-200 bg-white p-8">
         Loading executive dashboard...
       </div>
     );
@@ -68,44 +75,47 @@ export default function ExecutiveSummaryPage() {
     executive_narrative: "Not available",
     risk_story: "Not available",
     action_rationale: "Not available",
-    leadership_talking_points: ["Not available"],
+    leadership_talking_points: [],
   };
 
   return (
-    <section className="space-y-8" data-testid="executive-summary-page">
-      <div className="space-y-3" data-testid="summary-hero">
-        <p className="text-xs uppercase tracking-[0.18em] text-[#4B5563]" data-testid="summary-period-overline">
-          Reporting Window: {report.period}
+    <section className="space-y-8">
+      {/* HEADER */}
+      <div className="space-y-3">
+        <p className="text-xs uppercase text-gray-500">
+          Reporting Window: {report.period || "N/A"}
         </p>
-        <h2 className="text-4xl font-bold tracking-tight text-[#111827]" data-testid="summary-main-heading">
+
+        <h2 className="text-4xl font-bold">
           Jira Compliance Snapshot for Leadership
         </h2>
-        <p className="max-w-4xl text-base text-[#4B5563]" data-testid="summary-key-message">
-          {report.key_message}
+
+        <p className="text-gray-600">
+          {report.key_message || "No summary available"}
         </p>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3" data-testid="summary-stat-cards-grid">
-        {statCards.map((item, index) => {
+      {/* KPI CARDS */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        {statCards.map((item) => {
           const Icon = item.icon;
-          const cardValue = summary[item.key];
+          const value = summary[item.key] || 0;
 
           return (
-            <Card
-              key={item.key}
-              className={`report-card fade-in-up stagger-${index + 1} rounded-sm border-[#E5E7EB] shadow-none`}
-              data-testid={`summary-stat-card-${item.key}`}
-            >
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center justify-between text-sm font-semibold text-[#4B5563]" data-testid={`summary-stat-title-${item.key}`}>
+            <Card key={item.key}>
+              <CardHeader>
+                <CardTitle className="flex justify-between text-sm">
                   {item.label}
                   <Icon size={18} />
                 </CardTitle>
               </CardHeader>
+
               <CardContent>
-                <p className="text-4xl font-bold text-[#111827]" data-testid={`summary-stat-value-${item.key}`}>
-                  {cardValue}
-                  <span className="ml-1 text-base font-medium text-[#4B5563]">{item.suffix}</span>
+                <p className="text-3xl font-bold">
+                  {value}
+                  <span className="text-sm text-gray-500 ml-1">
+                    {item.suffix}
+                  </span>
                 </p>
               </CardContent>
             </Card>
@@ -113,105 +123,51 @@ export default function ExecutiveSummaryPage() {
         })}
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-5" data-testid="summary-insights-grid">
-        <Card className="report-card rounded-sm border-[#E5E7EB] shadow-none lg:col-span-2" data-testid="status-distribution-card">
-          <CardHeader>
-            <CardTitle className="text-lg font-semibold text-[#111827]" data-testid="status-distribution-title">
-              Compliance Status Distribution
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="h-64 w-full min-w-0" data-testid="status-pie-chart-container">
-              <ResponsiveContainer width="100%" height="100%" minWidth={260} minHeight={220}>
-                <PieChart>
-                  <Pie data={statusData} dataKey="value" nameKey="name" innerRadius={58} outerRadius={92} paddingAngle={2}>
-                    {statusData.map((entry) => (
-                      <Cell key={entry.name} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="flex flex-wrap gap-3" data-testid="status-legend-list">
-              {statusData.map((entry) => (
-                <span key={entry.name} className="inline-flex items-center gap-2 rounded-sm border border-[#E5E7EB] px-3 py-1 text-sm" data-testid={`status-legend-item-${entry.name.toLowerCase()}`}>
-                  <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: entry.color }} />
-                  {entry.name}: {entry.value}
-                </span>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="report-card rounded-sm border-[#E5E7EB] shadow-none lg:col-span-3" data-testid="top-risks-card">
-          <CardHeader>
-            <CardTitle className="text-lg font-semibold text-[#111827]" data-testid="top-risks-title">
-              Top Leadership Risks
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="inline-flex items-center gap-2" data-testid="risk-level-indicator">
-              <span className="text-sm font-semibold text-[#4B5563]">Current Risk Level:</span>
-              <StatusBadge status={summary.risk_level === "High" ? "RED" : summary.risk_level === "Medium" ? "AMBER" : "GREEN"} testId="risk-level-badge" />
-            </div>
-            <ul className="space-y-3" data-testid="top-risks-list">
-              {report.top_risks.map((risk, index) => (
-                <li key={`${index}-${risk}`} className="flex items-start gap-3 text-[#111827]" data-testid={`top-risk-item-${index + 1}`}>
-                  <WarningCircle size={20} className="mt-0.5 text-[#DC2626]" weight="fill" />
-                  <span>{risk}</span>
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card className="report-card rounded-sm border-[#E5E7EB] shadow-none" data-testid="ai-context-card">
+      {/* PIE CHART */}
+      <Card>
         <CardHeader>
-          <CardTitle className="text-lg font-semibold text-[#111827]" data-testid="ai-context-title">
-            AI-Generated Leadership Context
-          </CardTitle>
+          <CardTitle>Compliance Status Distribution</CardTitle>
         </CardHeader>
-        <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-3" data-testid="ai-context-grid">
-          <div className="rounded-sm border border-[#E5E7EB] bg-white p-4" data-testid="ai-context-executive">
-            <p className="text-xs uppercase tracking-[0.14em] text-[#6B7280]">Executive Narrative</p>
-            <p className="mt-2 text-sm text-[#111827]">{aiContext.executive_narrative}</p>
-          </div>
-          <div className="rounded-sm border border-[#E5E7EB] bg-white p-4" data-testid="ai-context-risk-story">
-            <p className="text-xs uppercase tracking-[0.14em] text-[#6B7280]">Risk Story</p>
-            <p className="mt-2 text-sm text-[#111827]">{aiContext.risk_story}</p>
-          </div>
-          <div className="rounded-sm border border-[#E5E7EB] bg-white p-4" data-testid="ai-context-action-rationale">
-            <p className="text-xs uppercase tracking-[0.14em] text-[#6B7280]">Action Rationale</p>
-            <p className="mt-2 text-sm text-[#111827]">{aiContext.action_rationale}</p>
-          </div>
-          <div className="rounded-sm border border-[#E5E7EB] bg-white p-4 md:col-span-3" data-testid="ai-context-talking-points">
-            <p className="text-xs uppercase tracking-[0.14em] text-[#6B7280]">Leadership Talking Points</p>
-            <ul className="mt-2 space-y-2 text-sm text-[#111827]">
-              {aiContext.leadership_talking_points.map((point, index) => (
-                <li key={`${index}-${point}`} data-testid={`ai-context-talking-point-${index + 1}`}>• {point}</li>
-              ))}
-            </ul>
+
+        <CardContent>
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie data={statusData} dataKey="value" nameKey="name">
+                  {statusData.map((entry) => (
+                    <Cell key={entry.name} fill={entry.color} />
+                  ))}
+                </Pie>
+                <Tooltip />
+              </PieChart>
+            </ResponsiveContainer>
           </div>
         </CardContent>
       </Card>
 
-      <Card className="report-card rounded-sm border-[#E5E7EB] bg-[#F9FAFB] shadow-none" data-testid="executive-actions-preview-card">
+      {/* RISKS */}
+      <Card>
         <CardHeader>
-          <CardTitle className="text-lg font-semibold text-[#111827]" data-testid="executive-actions-title">
-            Immediate Leadership Actions
-          </CardTitle>
+          <CardTitle>Top Leadership Risks</CardTitle>
         </CardHeader>
+
         <CardContent>
-          <ul className="space-y-2" data-testid="executive-actions-list">
-            {report.recommendations.map((item, index) => (
-              <li key={`${index}-${item}`} className="flex items-start gap-3 text-[#111827]" data-testid={`executive-action-item-${index + 1}`}>
-                <ArrowRight size={16} className="mt-1 text-[#002FA7]" />
-                <span>{item}</span>
-              </li>
-            ))}
-          </ul>
+          {(report.top_risks || []).map((risk, i) => (
+            <p key={i}>• {risk}</p>
+          ))}
+        </CardContent>
+      </Card>
+
+      {/* ACTIONS */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Immediate Leadership Actions</CardTitle>
+        </CardHeader>
+
+        <CardContent>
+          {(report.recommendations || []).map((r, i) => (
+            <p key={i}>→ {r}</p>
+          ))}
         </CardContent>
       </Card>
     </section>
