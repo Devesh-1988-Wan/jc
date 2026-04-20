@@ -1,11 +1,16 @@
 import React, { useState } from "react";
-import { uploadReport, applyReportPreview } from "../api/reportApi";
+import {
+  uploadReport,
+  generatePreview,
+  applyReportPreview,
+} from "../api/reportApi";
 
 const UploadReportPage = () => {
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
   const handleUpload = async () => {
     if (!file) {
@@ -16,22 +21,41 @@ const UploadReportPage = () => {
     try {
       setLoading(true);
       setError("");
+      setSuccess("");
       setPreview(null);
 
-      // Step 1: Upload
-      await uploadReport(file);
+      // ✅ STEP 1: Upload file
+      const uploadRes = await uploadReport(file);
+      console.log("Upload Response:", uploadRes);
 
-      // Step 2: Generate Preview
-      const previewData = await applyReportPreview();
+      // ✅ STEP 2: Generate preview
+      const previewRes = await generatePreview();
+      console.log("Preview Response:", previewRes);
 
-      if (previewData?.error) {
-        throw new Error(previewData.error);
+      if (previewRes?.error) {
+        throw new Error(previewRes.error);
       }
 
-      setPreview(previewData);
+      setPreview(previewRes);
+    } catch (err) {
+      console.error("Upload Flow Error:", err);
+      setError(err.message || "Failed to generate preview. Check backend.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ✅ OPTIONAL: Apply preview (separate action)
+  const handleApply = async () => {
+    try {
+      setLoading(true);
+      const res = await applyReportPreview();
+      console.log("Apply Response:", res);
+
+      setSuccess("Preview applied successfully!");
     } catch (err) {
       console.error(err);
-      setError("Failed to generate preview. Check backend.");
+      setError("Failed to apply preview");
     } finally {
       setLoading(false);
     }
@@ -44,9 +68,11 @@ const UploadReportPage = () => {
       {/* FILE INPUT */}
       <input
         type="file"
+        accept=".pdf,.txt"
         onChange={(e) => {
           setFile(e.target.files[0]);
           setError("");
+          setSuccess("");
         }}
       />
 
@@ -59,12 +85,15 @@ const UploadReportPage = () => {
 
       {/* ERROR */}
       {error && (
-        <p style={{ color: "red", marginTop: "10px" }}>
-          {error}
-        </p>
+        <p style={{ color: "red", marginTop: "10px" }}>{error}</p>
       )}
 
-      {/* PREVIEW OUTPUT */}
+      {/* SUCCESS */}
+      {success && (
+        <p style={{ color: "green", marginTop: "10px" }}>{success}</p>
+      )}
+
+      {/* PREVIEW */}
       {preview && (
         <div
           style={{
@@ -78,6 +107,15 @@ const UploadReportPage = () => {
           <p style={{ whiteSpace: "pre-wrap" }}>
             {preview.content}
           </p>
+
+          {/* APPLY BUTTON */}
+          <button
+            onClick={handleApply}
+            style={{ marginTop: "10px" }}
+            disabled={loading}
+          >
+            Apply Preview
+          </button>
         </div>
       )}
     </div>

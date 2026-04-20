@@ -12,6 +12,16 @@ export const uploadReport = async (file) => {
     body: formData,
   });
 
+  if (!res.ok) throw new Error("Upload failed");
+  return res.json();
+};
+
+// ==============================
+// FETCH REPORT
+// ==============================
+export const fetchReport = async () => {
+  const res = await fetch(`${BASE_URL}/report`);
+  if (!res.ok) throw new Error("Fetch report failed");
   return res.json();
 };
 
@@ -20,61 +30,67 @@ export const uploadReport = async (file) => {
 // ==============================
 export const fetchReportSummary = async () => {
   const res = await fetch(`${BASE_URL}/report/summary`);
-  return res.json();
-};
-
-// ==============================
-// FETCH RAW REPORT
-// ==============================
-export const fetchReport = async () => {
-  const res = await fetch(`${BASE_URL}/report`);
+  if (!res.ok) throw new Error("Fetch summary failed");
   return res.json();
 };
 
 // ==============================
 // GENERATE PREVIEW
 // ==============================
-export const applyReportPreview = async () => {
+export const generatePreview = async () => {
   const res = await fetch(`${BASE_URL}/report/preview`, {
     method: "POST",
   });
+
+  if (!res.ok) throw new Error("Preview failed");
   return res.json();
 };
 
 // ==============================
-// FETCH ACTIONS ✅ FIXED
+// APPLY PREVIEW
+// ==============================
+export const applyReportPreview = async () => {
+  const res = await fetch(`${BASE_URL}/report/apply-preview`, {
+    method: "POST",
+  });
+
+  if (!res.ok) throw new Error("Apply preview failed");
+  return res.json();
+};
+
+// ==============================
+// FETCH ACTIONS
 // ==============================
 export const fetchReportActions = async () => {
-  const res = await fetch(`${BASE_URL}/report/actions`);
+  const res = await fetch(`${BASE_URL}/actions`);
+  if (!res.ok) throw new Error("Fetch actions failed");
   return res.json();
 };
-
 // ==============================
-// UPDATE WIDGETS ✅ FIXED
+// UPDATE WIDGETS (FIX)
 // ==============================
-export const updateReportWidgets = async (data) => {
+export const updateReportWidgets = async (widgets) => {
   const res = await fetch(`${BASE_URL}/report/widgets`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify(data),
+    body: JSON.stringify(widgets),
   });
 
+  if (!res.ok) throw new Error("Failed to update widgets");
   return res.json();
 };
-
 // ==============================
-// PATCH STATUS
+// PATCH ACTION STATUS
 // ==============================
-export const patchActionStatus = async (data) => {
-  const res = await fetch(`${BASE_URL}/report/status`, {
+export const patchActionStatus = async (id, status) => {
+  const res = await fetch(`${BASE_URL}/actions/${id}`, {
     method: "PATCH",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(data),
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status }),
   });
 
+  if (!res.ok) throw new Error("Update failed");
   return res.json();
 };

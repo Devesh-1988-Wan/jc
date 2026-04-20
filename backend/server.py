@@ -1,13 +1,11 @@
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
-import json
-import os
 
 app = FastAPI()
 
 # =========================
-# CORS FIX
+# CORS
 # =========================
 app.add_middleware(
     CORSMiddleware,
@@ -20,11 +18,15 @@ app.add_middleware(
 DATA_STORE = {
     "report": None,
     "summary": None,
-    "preview": None
+    "preview": None,
+    "actions": [
+        {"id": 1, "name": "Improve SLA", "status": "Open"},
+        {"id": 2, "name": "Reduce MTTR", "status": "In Progress"},
+    ]
 }
 
 # =========================
-# HELPER (OLLAMA OPTIONAL)
+# HELPER (AI / FALLBACK)
 # =========================
 def generate_summary(text):
     try:
@@ -41,29 +43,53 @@ def generate_summary(text):
     except:
         return f"Basic Summary:\n{text[:200]}"
 
-
 # =========================
 # UPLOAD REPORT
 # =========================
 @app.post("/report/upload")
 async def upload_report(file: UploadFile = File(...)):
     content = await file.read()
-    text = content.decode("utf-8", errors="ignore")
+
+    text = ""
+
+    # ✅ HANDLE PDF PROPERLY
+    if file.filename.endswith(".pdf"):
+        with pdfplumber.open(io.BytesIO(content)) as pdf:
+            for page in pdf.pages:
+                text += page.extract_text() or ""
+
+    else:
+        # fallback for txt
+        text = content.decode("utf-8", errors="ignore")
+
+    if not text.strip():
+        return {"error": "Could not extract text from file"}
 
     DATA_STORE["report"] = text
     DATA_STORE["summary"] = generate_summary(text)
 
-    return {"message": "Report uploaded successfully"}
+    return {
+        "message": "Report uploaded successfully",
+        "chars_extracted": len(text)
+    }
 
 # =========================
-# FETCH RAW REPORT
+# FETCH REPORT
 # =========================
 @app.get("/report")
 def get_report():
     if not DATA_STORE["report"]:
         return {"error": "No report uploaded"}
-    
     return {"report": DATA_STORE["report"]}
+
+# =========================
+# FETCH SUMMARY (FIX ADDED)
+# =========================
+@app.get("/report/summary")
+def get_summary():
+    if not DATA_STORE["summary"]:
+        return {"error": "No summary available"}
+    return {"summary": DATA_STORE["summary"]}
 
 # =========================
 # GENERATE PREVIEW
@@ -80,36 +106,42 @@ def generate_preview():
 
     DATA_STORE["preview"] = preview
     return preview
+
 # =========================
-# FETCH ACTIONS (KPI PAGE)
+# APPLY PREVIEW (NEW)
 # =========================
-@app.get("/report/actions")
+@app.post("/report/apply-preview")
+def apply_preview():
+    if not DATA_STORE["preview"]:
+        return {"error": "No preview available"}
+
+    # In real case → persist to DB
+    return {
+        "message": "Preview applied successfully",
+        "data": DATA_STORE["preview"]
+    }
+
+# =========================
+# FETCH ACTIONS (FIX PATH)
+# =========================
+@app.get("/actions")
 def get_actions():
-    return {
-        "actions": [
-            {"id": 1, "name": "Improve SLA", "status": "Open"},
-            {"id": 2, "name": "Reduce MTTR", "status": "In Progress"},
-        ]
-    }
-
+    return {"actions": DATA_STORE["actions"]}
 
 # =========================
-# UPDATE WIDGETS
+# PATCH ACTION STATUS (FIX)
 # =========================
-@app.post("/report/widgets")
-def update_widgets(data: dict):
-    return {
-        "message": "Widgets updated",
-        "widgets": data
-    }
+@app.patch("/actions/{action_id}")
+def update_action(action_id: int, data: dict):
+    for action in DATA_STORE["actions"]:
+        if action["id"] == action_id:
+            action["status"] = data.get("status", action["status"])
+            return {"message": "Updated", "action": action}
+
+    return {"error": "Action not found"}
 
 # =========================
-# PATCH STATUS (FIXED)
+# RUN
 # =========================
-@app.patch("/report/status")
-def patch_status(data: dict):
-    return {"message": "Status updated", "data": data}
-
-
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
